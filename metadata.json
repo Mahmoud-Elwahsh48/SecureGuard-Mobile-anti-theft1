@@ -1,0 +1,6 @@
+{
+  "name": "SafeGuard Shield",
+  "description": "Intelligent mobile and device security monitoring with stealth capture, face verification, location tracking, telemetry, and automated alert dispatch.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

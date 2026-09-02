@@ -1,0 +1,24 @@
+# Android/Gradle
+.gradle/
+**/build/
+**/captures/
+**/.externalNativeBuild/
+**/.cxx/
+local.properties
+*.iml
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Generated assets
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Archive / temp
+*.rar
+*.zip
+*.tar.gz
+*.log
