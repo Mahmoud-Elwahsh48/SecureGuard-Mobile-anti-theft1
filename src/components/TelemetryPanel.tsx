@@ -54,25 +54,25 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         {/* Battery Telemetry */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3.5 transition hover:border-slate-700">
+        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 sm:p-3.5 transition hover:border-slate-700 min-w-0">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium">Battery Level</span>
+            <span className="text-[11px] sm:text-xs font-medium truncate">Battery Level</span>
             {telemetry.isCharging ? (
-              <BatteryCharging className="h-4 w-4 text-emerald-400" />
+              <BatteryCharging className="h-4 w-4 text-emerald-400 shrink-0" />
             ) : (
-              <Battery className="h-4 w-4 text-blue-400" />
+              <Battery className="h-4 w-4 text-blue-400 shrink-0" />
             )}
           </div>
           <div className="mt-2">
             <div className="flex items-baseline space-x-1">
-              <span className="text-2xl font-bold text-white">
+              <span className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                 {telemetry.batteryLevel != null ? `${telemetry.batteryLevel}%` : 'N/A'}
               </span>
               {telemetry.isCharging && (
-                <span className="text-[10px] font-semibold text-emerald-400 uppercase">
-                  (Charging)
+                <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-400 uppercase">
+                  (Chg)
                 </span>
               )}
             </div>
@@ -92,32 +92,32 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
         </div>
 
         {/* Network State */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3.5 transition hover:border-slate-700">
+        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 sm:p-3.5 transition hover:border-slate-700 min-w-0">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium">Network Link</span>
-            <Wifi className="h-4 w-4 text-blue-400" />
+            <span className="text-[11px] sm:text-xs font-medium truncate">Network Link</span>
+            <Wifi className="h-4 w-4 text-blue-400 shrink-0" />
           </div>
-          <div className="mt-2">
-            <span className="text-sm font-semibold capitalize text-white truncate block">
+          <div className="mt-2 min-w-0">
+            <span className="text-xs sm:text-sm font-semibold capitalize text-white truncate block">
               {telemetry.networkState}
             </span>
-            <div className="mt-1 flex items-center space-x-1 text-xs text-slate-400 truncate">
+            <div className="mt-1 flex items-center space-x-1 text-[11px] sm:text-xs text-slate-400 min-w-0">
               <Globe className="h-3 w-3 text-slate-500 shrink-0" />
-              <span className="truncate">{telemetry.ipAddress}</span>
+              <span className="truncate font-mono">{telemetry.ipAddress}</span>
             </div>
           </div>
         </div>
 
         {/* Geolocation Coordinates */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3.5 transition hover:border-slate-700">
+        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 sm:p-3.5 transition hover:border-slate-700 min-w-0">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium">GPS Geolocation</span>
-            <MapPin className="h-4 w-4 text-emerald-400" />
+            <span className="text-[11px] sm:text-xs font-medium truncate">GPS Location</span>
+            <MapPin className="h-4 w-4 text-emerald-400 shrink-0" />
           </div>
-          <div className="mt-2">
+          <div className="mt-2 min-w-0">
             {telemetry.latitude != null && telemetry.longitude != null ? (
               <>
-                <span className="text-xs font-mono font-medium text-slate-200 block truncate">
+                <span className="text-[11px] sm:text-xs font-mono font-medium text-slate-200 block truncate">
                   {telemetry.latitude.toFixed(4)}, {telemetry.longitude.toFixed(4)}
                 </span>
                 {mapLink && (
@@ -125,30 +125,30 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
                     href={mapLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-1 inline-flex items-center space-x-1 text-xs text-blue-400 hover:text-blue-300 transition"
+                    className="mt-1 inline-flex items-center space-x-1 text-[11px] sm:text-xs text-blue-400 hover:text-blue-300 transition"
                   >
-                    <span>Google Maps</span>
-                    <ExternalLink className="h-3 w-3" />
+                    <span>Maps Link</span>
+                    <ExternalLink className="h-3 w-3 shrink-0" />
                   </a>
                 )}
               </>
             ) : (
-              <span className="text-xs text-slate-500">Location pending permission</span>
+              <span className="text-[11px] sm:text-xs text-slate-500 truncate block">Location pending</span>
             )}
           </div>
         </div>
 
         {/* Device Environment */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3.5 transition hover:border-slate-700">
+        <div className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 sm:p-3.5 transition hover:border-slate-700 min-w-0">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-medium">Device Profile</span>
-            <Smartphone className="h-4 w-4 text-purple-400" />
+            <span className="text-[11px] sm:text-xs font-medium truncate">Device Profile</span>
+            <Smartphone className="h-4 w-4 text-purple-400 shrink-0" />
           </div>
-          <div className="mt-2">
-            <span className="text-xs font-semibold text-white truncate block">
+          <div className="mt-2 min-w-0">
+            <span className="text-xs sm:text-xs font-semibold text-white truncate block">
               {telemetry.os} ({telemetry.browser})
             </span>
-            <span className="mt-1 text-[11px] text-slate-400 truncate block">
+            <span className="mt-1 text-[10px] sm:text-[11px] text-slate-400 truncate block">
               {telemetry.deviceModel}
             </span>
           </div>

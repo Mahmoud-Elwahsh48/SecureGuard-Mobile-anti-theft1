@@ -279,7 +279,7 @@ export function App() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white pb-24 md:pb-8">
       {/* Background Stealth Camera Manager */}
       <CameraStealthManager
         onRegisterCaptureFunction={(fn) => {
@@ -299,13 +299,13 @@ export function App() {
       />
 
       {/* Main Container */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 space-y-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-3.5 py-4 sm:px-6 sm:py-6 space-y-5 sm:space-y-6">
         {/* Core System Status & Quick Setup Bar (Matches Android MainActivity) */}
-        <div className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/90 to-slate-900/40 p-5 shadow-xl backdrop-blur-md">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
-            <div className="flex items-start space-x-4">
+        <section id="section-overview" className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/90 to-slate-900/40 p-4 sm:p-5 shadow-xl backdrop-blur-md">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-4 sm:pb-5">
+            <div className="flex items-start space-x-3.5 sm:space-x-4">
               <div
-                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-inner ${
+                className={`flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-2xl border shadow-inner ${
                   prefs.isMonitoring
                     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
                     : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
@@ -317,8 +317,8 @@ export function App() {
                   <ShieldAlert className="h-6 w-6" />
                 )}
               </div>
-              <div>
-                <div className="flex items-center space-x-2.5">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-base font-bold text-white sm:text-lg">
                     SafeGuard Shield Active Protection
                   </h2>
@@ -339,14 +339,14 @@ export function App() {
             </div>
 
             {/* Quick Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
               <button
                 id="main-enroll-face-btn"
                 onClick={() => setIsFaceModalOpen(true)}
-                className="flex items-center space-x-2 rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition shadow-sm"
+                className="flex-1 sm:flex-none flex items-center justify-center space-x-2 rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 sm:py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition active:scale-95 shadow-sm min-h-[42px]"
               >
-                <UserCheck className="h-4 w-4 text-blue-400" />
-                <span>
+                <UserCheck className="h-4 w-4 text-blue-400 shrink-0" />
+                <span className="whitespace-nowrap">
                   {prefs.ownerFaceEmbedding ? 'Enrolled Face Active' : 'Enroll Owner Face'}
                 </span>
               </button>
@@ -354,7 +354,7 @@ export function App() {
               <button
                 id="main-toggle-monitoring-btn"
                 onClick={handleToggleMonitoring}
-                className={`flex items-center space-x-2 rounded-xl px-4 py-2 text-xs font-semibold transition shadow-md ${
+                className={`flex-1 sm:flex-none flex items-center justify-center space-x-2 rounded-xl px-4 py-2.5 sm:py-2 text-xs font-semibold transition shadow-md active:scale-95 min-h-[42px] ${
                   prefs.isMonitoring
                     ? 'bg-amber-600/90 text-white hover:bg-amber-500'
                     : 'bg-emerald-600 text-white hover:bg-emerald-500'
@@ -362,13 +362,13 @@ export function App() {
               >
                 {prefs.isMonitoring ? (
                   <>
-                    <Unlock className="h-4 w-4" />
-                    <span>Disarm Monitoring</span>
+                    <Unlock className="h-4 w-4 shrink-0" />
+                    <span className="whitespace-nowrap">Disarm Monitoring</span>
                   </>
                 ) : (
                   <>
-                    <Lock className="h-4 w-4" />
-                    <span>Arm & Enable Monitoring</span>
+                    <Lock className="h-4 w-4 shrink-0" />
+                    <span className="whitespace-nowrap">Arm & Enable</span>
                   </>
                 )}
               </button>
@@ -391,7 +391,7 @@ export function App() {
                   value={quickOwnerEmail}
                   onChange={(e) => setQuickOwnerEmail(e.target.value)}
                   placeholder="owner@example.com"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm sm:text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[42px] sm:min-h-0"
                 />
               </div>
 
@@ -405,7 +405,7 @@ export function App() {
                   value={quickRecipientEmail}
                   onChange={(e) => setQuickRecipientEmail(e.target.value)}
                   placeholder="alerts@example.com"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm sm:text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[42px] sm:min-h-0"
                 />
               </div>
 
@@ -420,12 +420,12 @@ export function App() {
                     value={quickApiKey}
                     onChange={(e) => setQuickApiKey(e.target.value)}
                     placeholder="SG.xxxxx"
-                    className="flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                    className="flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm sm:text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono min-h-[42px] sm:min-h-0"
                   />
                   <button
                     id="main-save-config-btn"
                     onClick={handleQuickEnableMonitoring}
-                    className="rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition shrink-0"
+                    className="rounded-xl bg-blue-600 px-4 py-2.5 sm:py-2 text-xs font-semibold text-white hover:bg-blue-500 transition active:scale-95 shrink-0 min-h-[42px] sm:min-h-0"
                   >
                     Save
                   </button>
@@ -435,39 +435,108 @@ export function App() {
 
             {quickSavedToast && (
               <div className="mt-3 flex items-center space-x-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-300">
-                <CheckCircle className="h-4 w-4 text-emerald-400" />
+                <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
                 <span>{quickSavedToast}</span>
               </div>
             )}
           </div>
-        </div>
+        </section>
 
         {/* Real-time Telemetry Panel */}
-        <TelemetryPanel
-          telemetry={telemetry}
-          isMonitoring={prefs.isMonitoring}
-          onRefresh={refreshTelemetry}
-          isRefreshing={isRefreshingTelemetry}
-        />
+        <section id="section-telemetry">
+          <TelemetryPanel
+            telemetry={telemetry}
+            isMonitoring={prefs.isMonitoring}
+            onRefresh={refreshTelemetry}
+            isRefreshing={isRefreshingTelemetry}
+          />
+        </section>
 
         {/* Trigger Simulator & Test Engine */}
-        <TriggerSimulator
-          prefs={prefs}
-          onFireTrigger={handleFireTrigger}
-          isProcessing={isProcessingTrigger}
-          lastResult={lastTriggerResult}
-        />
+        <section id="section-triggers">
+          <TriggerSimulator
+            prefs={prefs}
+            onFireTrigger={handleFireTrigger}
+            isProcessing={isProcessingTrigger}
+            lastResult={lastTriggerResult}
+          />
+        </section>
 
         {/* Security Events Incident Log */}
-        <SecurityEventsList
-          events={events}
-          onSelectEvent={(ev) => setSelectedEvent(ev)}
-          onResendAlert={handleResendAlert}
-          onDeleteEvent={handleDeleteEvent}
-          onClearAll={handleClearAllEvents}
-          isResendingId={isResendingId}
-        />
+        <section id="section-logs">
+          <SecurityEventsList
+            events={events}
+            onSelectEvent={(ev) => setSelectedEvent(ev)}
+            onResendAlert={handleResendAlert}
+            onDeleteEvent={handleDeleteEvent}
+            onClearAll={handleClearAllEvents}
+            isResendingId={isResendingId}
+          />
+        </section>
       </main>
+
+      {/* Mobile Sticky Bottom Navigation Bar (Optimized for One-Handed Thumb Operation) */}
+      <nav aria-label="Mobile Navigation Bar" className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800 bg-slate-900/95 backdrop-blur-xl px-2 py-1.5 safe-bottom">
+        <div className="flex items-center justify-around">
+          <button
+            id="mobile-nav-overview-btn"
+            onClick={() => {
+              document.getElementById('section-overview')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+          >
+            <Shield className="h-5 w-5" />
+            <span className="text-[10px] font-medium mt-0.5">Armed</span>
+          </button>
+
+          <button
+            id="mobile-nav-triggers-btn"
+            onClick={() => {
+              document.getElementById('section-triggers')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+          >
+            <Zap className="h-5 w-5 text-amber-400" />
+            <span className="text-[10px] font-medium mt-0.5">Triggers</span>
+          </button>
+
+          <button
+            id="mobile-nav-telemetry-btn"
+            onClick={() => {
+              document.getElementById('section-telemetry')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+          >
+            <Radio className="h-5 w-5 text-blue-400" />
+            <span className="text-[10px] font-medium mt-0.5">Telemetry</span>
+          </button>
+
+          <button
+            id="mobile-nav-logs-btn"
+            onClick={() => {
+              document.getElementById('section-logs')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="relative flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+          >
+            <Bell className="h-5 w-5 text-emerald-400" />
+            <span className="text-[10px] font-medium mt-0.5">Logs</span>
+            {unauthorizedCount > 0 && (
+              <span className="absolute top-1 right-3 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">
+                {unauthorizedCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            id="mobile-nav-settings-btn"
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+          >
+            <Settings className="h-5 w-5" />
+            <span className="text-[10px] font-medium mt-0.5">Settings</span>
+          </button>
+        </div>
+      </nav>
 
       {/* Modals */}
       <FaceEnrollmentModal

@@ -135,29 +135,29 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+        <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               id="search-events-input"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by event, condition, IP..."
-              className="w-full rounded-xl border border-slate-800 bg-slate-950/80 pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-xl border border-slate-800 bg-slate-950/80 pl-10 pr-4 py-2.5 text-sm sm:text-xs text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
-          <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             {['all', 'authorized', 'sent', 'pending', 'failed'].map((st) => (
               <button
                 key={st}
                 id={`filter-${st}-btn`}
                 onClick={() => setStatusFilter(st)}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-medium capitalize transition whitespace-nowrap ${
+                className={`rounded-xl px-3 py-2 text-xs font-medium capitalize transition whitespace-nowrap active:scale-95 min-h-[36px] ${
                   statusFilter === st
-                    ? 'bg-blue-600 text-white'
-                    : 'border border-slate-800 bg-slate-950/60 text-slate-400 hover:text-slate-200'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'border border-slate-800 bg-slate-950/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                 }`}
               >
                 {st}
@@ -185,13 +185,13 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
               <div
                 key={event.id}
                 id={`event-item-${event.id}`}
-                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 transition hover:bg-slate-800/30 gap-3"
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:p-4 transition hover:bg-slate-800/30 gap-3"
               >
                 <div className="flex items-start space-x-3 min-w-0">
                   {/* Photo or Icon Preview */}
                   <div
                     onClick={() => onSelectEvent(event)}
-                    className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-slate-700 bg-slate-950 flex items-center justify-center group"
+                    className="relative h-12 w-12 sm:h-14 sm:w-14 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-slate-700 bg-slate-950 flex items-center justify-center group"
                   >
                     {event.photoPath ? (
                       <img
@@ -219,29 +219,31 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
 
                   {/* Details */}
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-xs font-bold text-white truncate">{event.eventType}</h4>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <h4 className="text-xs sm:text-sm font-bold text-white truncate max-w-[200px] sm:max-w-none">
+                        {event.eventType}
+                      </h4>
                       {getStatusBadge(event.status)}
                     </div>
-                    <p className="mt-0.5 text-xs text-slate-300">{event.message}</p>
+                    <p className="mt-0.5 text-xs text-slate-300 break-words">{event.message}</p>
 
                     {/* Metadata chips */}
-                    <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-slate-400">
                       <span className="flex items-center space-x-1">
-                        <Clock className="h-3 w-3 text-slate-500" />
+                        <Clock className="h-3 w-3 text-slate-500 shrink-0" />
                         <span>{new Date(event.timestamp).toLocaleString()}</span>
                       </span>
 
                       {event.batteryLevel != null && (
                         <span className="flex items-center space-x-1">
-                          <Battery className="h-3 w-3 text-slate-500" />
+                          <Battery className="h-3 w-3 text-slate-500 shrink-0" />
                           <span>{event.batteryLevel}%</span>
                         </span>
                       )}
 
                       {event.networkState && (
                         <span className="flex items-center space-x-1">
-                          <Wifi className="h-3 w-3 text-slate-500" />
+                          <Wifi className="h-3 w-3 text-slate-500 shrink-0" />
                           <span className="capitalize">{event.networkState}</span>
                         </span>
                       )}
@@ -253,7 +255,7 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
                           rel="noopener noreferrer"
                           className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition"
                         >
-                          <MapPin className="h-3 w-3" />
+                          <MapPin className="h-3 w-3 shrink-0" />
                           <span>
                             {event.latitude.toFixed(2)}, {event.longitude.toFixed(2)}
                           </span>
@@ -264,11 +266,11 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center space-x-2 self-end sm:self-center shrink-0">
+                <div className="flex items-center space-x-2 self-end sm:self-center shrink-0 pt-1 sm:pt-0">
                   <button
                     id={`view-event-btn-${event.id}`}
                     onClick={() => onSelectEvent(event)}
-                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition"
+                    className="flex items-center justify-center rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition active:scale-95 min-h-[38px]"
                   >
                     Details
                   </button>
@@ -279,12 +281,13 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
                       onClick={() => onResendAlert(event)}
                       disabled={isResendingId === event.id}
                       title="Dispatch alert payload now"
-                      className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-xs font-medium text-blue-300 hover:bg-blue-500/20 transition disabled:opacity-50"
+                      aria-label="Dispatch alert payload now"
+                      className="flex items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-300 hover:bg-blue-500/20 transition disabled:opacity-50 active:scale-95 min-h-[38px]"
                     >
                       {isResendingId === event.id ? (
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <RefreshCw className="h-4 w-4 animate-spin" />
                       ) : (
-                        <Send className="h-3.5 w-3.5" />
+                        <Send className="h-4 w-4" />
                       )}
                     </button>
                   )}
@@ -293,9 +296,10 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
                     id={`delete-event-btn-${event.id}`}
                     onClick={() => onDeleteEvent(event.id)}
                     title="Delete record"
-                    className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition"
+                    aria-label="Delete record"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition active:scale-95"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               </div>

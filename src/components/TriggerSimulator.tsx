@@ -96,45 +96,45 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
         </div>
 
         {/* Face Simulation / Camera Mode Selector */}
-        <div className="flex items-center space-x-1 rounded-lg bg-slate-950 p-1 border border-slate-800 self-start sm:self-auto">
+        <div className="flex items-center space-x-1 rounded-xl bg-slate-950 p-1 border border-slate-800 w-full sm:w-auto justify-between sm:justify-start">
           <button
             id="face-mode-camera-btn"
             onClick={() => setFaceMode('camera')}
-            className={`flex items-center space-x-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 rounded-lg px-3 py-2 sm:py-1.5 text-xs font-medium transition active:scale-95 ${
               faceMode === 'camera'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
             title="Use live front webcam for stealth capture"
           >
-            <Video className="h-3.5 w-3.5" />
-            <span>Live Camera</span>
+            <Video className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap">Camera</span>
           </button>
           <button
             id="face-mode-owner-btn"
             onClick={() => setFaceMode('owner_simulated')}
-            className={`flex items-center space-x-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 rounded-lg px-3 py-2 sm:py-1.5 text-xs font-medium transition active:scale-95 ${
               faceMode === 'owner_simulated'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
             title="Simulate Authorized Owner Face"
           >
-            <UserCheck className="h-3.5 w-3.5" />
-            <span>Owner</span>
+            <UserCheck className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap">Owner</span>
           </button>
           <button
             id="face-mode-intruder-btn"
             onClick={() => setFaceMode('intruder_simulated')}
-            className={`flex items-center space-x-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition ${
+            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 rounded-lg px-3 py-2 sm:py-1.5 text-xs font-medium transition active:scale-95 ${
               faceMode === 'intruder_simulated'
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
             title="Simulate Intruder / Unrecognized Face"
           >
-            <UserX className="h-3.5 w-3.5" />
-            <span>Intruder</span>
+            <UserX className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap">Intruder</span>
           </button>
         </div>
       </div>
@@ -151,13 +151,13 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
               id={`trigger-btn-${trigger.id.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
               disabled={isProcessing}
               onClick={() => handleExecute(trigger.id)}
-              className={`group flex items-start space-x-3 rounded-xl border p-3 text-left transition ${
+              className={`group flex items-start space-x-3 rounded-xl border p-3.5 text-left transition active:scale-[0.98] ${
                 isThisTriggerActive
                   ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500'
                   : 'border-slate-800/80 bg-slate-950/50 hover:border-slate-700 hover:bg-slate-800/50'
               } disabled:cursor-not-allowed disabled:opacity-60`}
             >
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${trigger.color}`}>
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${trigger.color}`}>
                 {isThisTriggerActive ? (
                   <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
                 ) : (
@@ -166,10 +166,10 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-200 group-hover:text-white">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-200 group-hover:text-white">
                     {trigger.label}
                   </span>
-                  <Play className="h-3 w-3 text-slate-500 opacity-0 group-hover:opacity-100 transition" />
+                  <Play className="h-3.5 w-3.5 text-slate-500 opacity-60 sm:opacity-0 group-hover:opacity-100 transition shrink-0" />
                 </div>
                 <p className="mt-0.5 text-[11px] text-slate-400 line-clamp-2">
                   {trigger.description}
