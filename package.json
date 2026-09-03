@@ -6,9 +6,16 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 3000"
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "cap": "cap",
+    "cap:sync": "cap sync",
+    "cap:build": "vite build && cap sync"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/geolocation": "^8.2.2",
+    "@capacitor/ios": "^8.5.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "motion": "^12.4.7",
@@ -17,6 +24,7 @@
     "tailwind-merge": "^3.0.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

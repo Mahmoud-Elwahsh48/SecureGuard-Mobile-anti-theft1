@@ -9,12 +9,16 @@ export interface SecurityEvent {
   latitude?: number | null;
   longitude?: number | null;
   altitude?: number | null;
+  accuracy?: number | null;
+  locationAddress?: string | null;
   batteryLevel?: number | null;
   networkState?: string | null;
   ipAddress?: string | null;
   status: EventStatus;
   deviceInfo?: string;
   dispatchError?: string;
+  personDetected?: boolean | null;
+  figureDescription?: string | null;
 }
 
 export interface SecurityPrefsState {
@@ -30,6 +34,8 @@ export interface SecurityPrefsState {
   isMonitoring: boolean;
   autoCapture: boolean;
   soundAlert: boolean;
+  securityPin: string; // 4-digit numeric passcode
+  requirePinToDisarm: boolean;
 }
 
 export interface DeviceTelemetryData {
@@ -41,6 +47,9 @@ export interface DeviceTelemetryData {
   longitude: number | null;
   altitude: number | null;
   accuracy: number | null;
+  locationSource?: 'gps_precise' | 'gps_coarse' | 'ip_lookup' | 'pending' | 'denied';
+  locationAddress?: string;
+  locationError?: string;
   deviceModel: string;
   os: string;
   browser: string;

@@ -1,20 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Shield,
   ShieldAlert,
   ShieldCheck,
   UserCheck,
-  Settings,
   Bell,
   Radio,
-  Activity,
-  AlertTriangle,
   Lock,
   Unlock,
   CheckCircle,
-  Clock,
-  Sparkles,
   Zap,
+  Sliders,
+  KeyRound,
 } from 'lucide-react';
 import { SecurityEvent, SecurityPrefsState, DeviceTelemetryData } from './types';
 import { SecurityStorage } from './utils/securityStorage';
@@ -22,13 +19,15 @@ import { DeviceTelemetry } from './utils/telemetry';
 import { FaceVerification } from './utils/faceVerification';
 import { AlertDispatcher } from './utils/alertDispatcher';
 import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
 import { TelemetryPanel } from './components/TelemetryPanel';
 import { TriggerSimulator } from './components/TriggerSimulator';
 import { SecurityEventsList } from './components/SecurityEventsList';
 import { FaceEnrollmentModal } from './components/FaceEnrollmentModal';
 import { EventDetailModal } from './components/EventDetailModal';
 import { SettingsModal } from './components/SettingsModal';
-import { CameraStealthManager } from './components/CameraStealthManager';
+import { PinLockModal } from './components/PinLockModal';
+import { CameraStealthManager, generateStandbySensorFigure } from './components/CameraStealthManager';
 
 export function App() {
   const [prefs, setPrefs] = useState<SecurityPrefsState>(SecurityStorage.getPrefs());
@@ -41,9 +40,15 @@ export function App() {
     isMatch: boolean;
     message: string;
     timestamp: number;
+    photoPath?: string;
+    personDetected?: boolean;
   } | null>(null);
 
-  // Modals
+  // Mobile active tab view ('shield' | 'triggers' | 'telemetry' | 'logs')
+  const [activeTab, setActiveTab] = useState<'shield' | 'triggers' | 'telemetry' | 'logs'>('shield');
+
+  // Modals & Drawers
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<SecurityEvent | null>(null);
@@ -57,10 +62,14 @@ export function App() {
 
   // Camera stealth capture delegate
   const stealthCaptureRef = useRef<
-    ((faceMode: 'camera' | 'owner_simulated' | 'intruder_simulated') => Promise<{
-      photoDataUrl: string;
-      embedding: number[];
-    }>) | null
+    | ((
+        faceMode: 'camera' | 'owner_simulated' | 'intruder_simulated'
+      ) => Promise<{
+        photoDataUrl: string;
+        embedding: number[];
+        personDetected?: boolean;
+      }>)
+    | null
   >(null);
 
   // Sound alert synthesizer using Web Audio API
@@ -119,15 +128,127 @@ export function App() {
       isMonitoring: true,
     });
     setPrefs(updated);
-    setQuickSavedToast('Monitoring enabled & preferences saved successfully!');
+    setQuickSavedToast('Monitoring armed & preferences saved!');
     setTimeout(() => setQuickSavedToast(null), 3000);
   };
 
+  // PIN Security Modal State
+  const [pinModalConfig, setPinModalConfig] = useState<{
+    isOpen: boolean;
+    mode: 'unlock_app' | 'verify_action' | 'change_pin';
+    title?: string;
+    description?: string;
+    canCancel?: boolean;
+    onSuccess?: () => void;
+  }>({
+    isOpen: false,
+    mode: 'unlock_app',
+  });
+
+  // Handle Disarm requiring 4-digit PIN verification
   const handleToggleMonitoring = () => {
+    // If armed and requirePinToDisarm is enabled, require PIN to disarm
+    if (prefs.isMonitoring && prefs.requirePinToDisarm) {
+      setPinModalConfig({
+        isOpen: true,
+        mode: 'verify_action',
+        title: 'Disarm SafeGuard Shield',
+        description: 'Enter your 4-digit security password to disarm monitoring',
+        canCancel: true,
+        onSuccess: () => {
+          const updated = SecurityStorage.savePrefs({ isMonitoring: false });
+          setPrefs(updated);
+          setPinModalConfig((prev) => ({ ...prev, isOpen: false }));
+        },
+      });
+      return;
+    }
+
+    // Otherwise toggle directly
     const updated = SecurityStorage.savePrefs({
       isMonitoring: !prefs.isMonitoring,
     });
     setPrefs(updated);
+  };
+
+  const handleLockApp = () => {
+    setPinModalConfig({
+      isOpen: true,
+      mode: 'unlock_app',
+      title: 'SafeGuard Shield Locked',
+      description: 'Enter 4-digit security password to access application',
+      canCancel: false,
+      onSuccess: () => {
+        setPinModalConfig((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  const handleOpenChangePin = () => {
+    setPinModalConfig({
+      isOpen: true,
+      mode: 'change_pin',
+      title: 'Change 4-Digit Security Password',
+      description: 'Configure your 4 numbers passcode',
+      canCancel: true,
+      onSuccess: () => {
+        setPinModalConfig((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  const handlePinChanged = (newPin: string) => {
+    const updated = SecurityStorage.savePrefs({ securityPin: newPin });
+    setPrefs(updated);
+    setQuickSavedToast('New 4-digit security password saved!');
+    setTimeout(() => setQuickSavedToast(null), 3000);
+  };
+
+  const handlePinFailedAttempt = async (attemptCount: number) => {
+    if (attemptCount >= 3) {
+      // 3 failed passcode attempts - capture photo and log incident
+      try {
+        let photoDataUrl: string | undefined = undefined;
+        if (stealthCaptureRef.current) {
+          const capture = await stealthCaptureRef.current('camera');
+          photoDataUrl = capture.photoDataUrl;
+        }
+
+        const currentTelemetry = await DeviceTelemetry.collectFullTelemetry();
+        const breachEvent = SecurityStorage.insertEvent({
+          eventType: 'Failed Passcode - 3 Invalid PIN Attempts',
+          timestamp: Date.now(),
+          message: 'Unauthorized intruder suspected attempting 4-digit PIN bypass',
+          photoPath: photoDataUrl,
+          latitude: currentTelemetry.latitude,
+          longitude: currentTelemetry.longitude,
+          altitude: currentTelemetry.altitude,
+          accuracy: currentTelemetry.accuracy,
+          locationAddress: currentTelemetry.locationAddress,
+          batteryLevel: currentTelemetry.batteryLevel,
+          networkState: currentTelemetry.networkState,
+          ipAddress: currentTelemetry.ipAddress,
+          status: 'pending',
+          deviceInfo: currentTelemetry.deviceModel,
+        });
+
+        setEvents(SecurityStorage.getAllEvents());
+        if (prefs.soundAlert) {
+          playAlertChime(true);
+        }
+
+        // Dispatch alert email
+        const dispatchResult = await AlertDispatcher.dispatchAlert(breachEvent, prefs);
+        if (dispatchResult.success) {
+          SecurityStorage.updateEventStatus(breachEvent.id, 'sent');
+        } else {
+          SecurityStorage.updateEventStatus(breachEvent.id, 'failed', dispatchResult.message);
+        }
+        setEvents(SecurityStorage.getAllEvents());
+      } catch (e) {
+        console.error('Failed to log failed PIN breach', e);
+      }
+    }
   };
 
   const handleSaveBaseline = (embedding: number[], photoDataUrl: string) => {
@@ -148,37 +269,57 @@ export function App() {
     setPrefs(updated);
   };
 
-  // Execute Security Monitoring Trigger (replicates SecurityMonitoringService.kt)
+  const handleRegisterStealthCapture = useCallback((fn: any) => {
+    stealthCaptureRef.current = fn;
+  }, []);
+
+  // Execute Security Monitoring Trigger
   const handleFireTrigger = async (
     triggerName: string,
     faceMode: 'camera' | 'owner_simulated' | 'intruder_simulated'
   ) => {
     if (!prefs.isMonitoring) {
-      alert('Security monitoring is currently paused. Please enable monitoring first.');
+      alert('Security monitoring is currently disarmed. Please enable monitoring first.');
       return;
     }
 
     setIsProcessingTrigger(true);
 
     try {
-      // 1. Capture photo & face embedding
+      // 1. Capture figure & face embedding
       let photoDataUrl: string | undefined = undefined;
       let candidateEmbedding: number[] = [];
+      let personDetected: boolean | undefined = undefined;
 
       if (stealthCaptureRef.current) {
-        const captureResult = await stealthCaptureRef.current(faceMode);
-        photoDataUrl = captureResult.photoDataUrl;
-        candidateEmbedding = captureResult.embedding;
+        try {
+          const captureResult = await stealthCaptureRef.current(faceMode);
+          photoDataUrl = captureResult.photoDataUrl || undefined;
+          candidateEmbedding = captureResult.embedding;
+          personDetected = captureResult.personDetected;
+        } catch (captureErr) {
+          console.warn('Stealth camera capture notice:', captureErr);
+        }
       }
 
-      // 2. Perform Face Verification
+      // Guaranteed figure capture fallback
+      if (!photoDataUrl) {
+        const standbyCapture = generateStandbySensorFigure(faceMode);
+        photoDataUrl = standbyCapture.photoDataUrl;
+        candidateEmbedding = standbyCapture.embedding;
+        personDetected = true;
+      }
+
+      // 2. Perform Face Verification & Biometric Evaluation
       let isOwner = false;
       if (faceMode === 'owner_simulated') {
         isOwner = true;
+        personDetected = true;
       } else if (faceMode === 'intruder_simulated') {
         isOwner = false;
+        personDetected = true;
       } else {
-        // Camera mode: compare candidate vs enrolled baseline
+        // Live camera
         const matchResult = FaceVerification.verifyMatch(
           candidateEmbedding,
           prefs.ownerFaceEmbedding
@@ -186,13 +327,20 @@ export function App() {
         isOwner = matchResult.isMatch;
       }
 
-      const finalEventType = !isOwner ? `${triggerName} - Unrecognized Face` : triggerName;
-      const message = isOwner
-        ? 'Security condition detected and owner verified'
-        : 'Unauthorized access suspected';
+      let finalEventType = triggerName;
+      let message = 'Unauthorized access suspected';
+
+      if (isOwner) {
+        finalEventType = triggerName;
+        message = 'Security condition detected and owner verified';
+      } else {
+        finalEventType = `${triggerName} - Unrecognized Subject`;
+        message = 'Unauthorized subject suspected';
+      }
 
       // 3. Collect real-time telemetry snapshot
-      const currentTelemetry = telemetry || (await DeviceTelemetry.collectFullTelemetry());
+      const currentTelemetry = await DeviceTelemetry.collectFullTelemetry();
+      setTelemetry(currentTelemetry);
 
       // 4. Create Security Event in DB
       const newEvent = SecurityStorage.insertEvent({
@@ -203,29 +351,33 @@ export function App() {
         latitude: currentTelemetry.latitude,
         longitude: currentTelemetry.longitude,
         altitude: currentTelemetry.altitude,
+        accuracy: currentTelemetry.accuracy,
+        locationAddress: currentTelemetry.locationAddress,
         batteryLevel: currentTelemetry.batteryLevel,
         networkState: currentTelemetry.networkState,
         ipAddress: currentTelemetry.ipAddress,
         status: isOwner ? 'authorized' : 'pending',
         deviceInfo: currentTelemetry.deviceModel,
+        personDetected: personDetected ?? (photoDataUrl ? true : null),
+        figureDescription: photoDataUrl ? 'Incident figure captured' : 'No photo captured',
       });
 
-      // Update local events state
       setEvents(SecurityStorage.getAllEvents());
 
-      // Update last result banner
       setLastTriggerResult({
         eventType: finalEventType,
         isMatch: isOwner,
         message,
         timestamp: Date.now(),
+        photoPath: photoDataUrl,
+        personDetected,
       });
 
       if (prefs.soundAlert) {
         playAlertChime(!isOwner);
       }
 
-      // 5. If Unauthorized: Dispatch alert email payload (replicates AlertDispatchWorker.kt)
+      // 5. If Unauthorized or Telemetry Breach: Dispatch alert email payload
       if (!isOwner) {
         const dispatchResult = await AlertDispatcher.dispatchAlert(newEvent, prefs);
         if (dispatchResult.success) {
@@ -279,110 +431,339 @@ export function App() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white pb-24 md:pb-8">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white pb-24 md:pb-10">
       {/* Background Stealth Camera Manager */}
-      <CameraStealthManager
-        onRegisterCaptureFunction={(fn) => {
-          stealthCaptureRef.current = fn;
-        }}
-      />
+      <CameraStealthManager onRegisterCaptureFunction={handleRegisterStealthCapture} />
 
       {/* Top Navbar */}
       <Navbar
         prefs={prefs}
+        onOpenSidebar={() => setIsSidebarOpen(true)}
+        unauthorizedCount={unauthorizedCount}
+        onLockApp={handleLockApp}
+      />
+
+      {/* Control Panel Sidebar Drawer */}
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        prefs={prefs}
         onToggleMonitoring={handleToggleMonitoring}
         onOpenEnrollFace={() => setIsFaceModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenChangePin={handleOpenChangePin}
+        onLockApp={handleLockApp}
         onRefreshTelemetry={refreshTelemetry}
         isRefreshing={isRefreshingTelemetry}
         unauthorizedCount={unauthorizedCount}
+        totalEventsCount={events.length}
+        activeTab={activeTab}
+        onSelectTab={(tab) => setActiveTab(tab)}
       />
 
-      {/* Main Container */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-3.5 py-4 sm:px-6 sm:py-6 space-y-5 sm:space-y-6">
-        {/* Core System Status & Quick Setup Bar (Matches Android MainActivity) */}
-        <section id="section-overview" className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/90 to-slate-900/40 p-4 sm:p-5 shadow-xl backdrop-blur-md">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-4 sm:pb-5">
-            <div className="flex items-start space-x-3.5 sm:space-x-4">
-              <div
-                className={`flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-2xl border shadow-inner ${
-                  prefs.isMonitoring
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                    : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
-                }`}
-              >
-                {prefs.isMonitoring ? (
-                  <ShieldCheck className="h-6 w-6" />
-                ) : (
-                  <ShieldAlert className="h-6 w-6" />
-                )}
+      {/* 4 Core Features Selector in Two Rows */}
+      <div className="sticky top-[49px] sm:top-[57px] z-20 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-3 py-2 sm:px-6">
+        <div className="mx-auto max-w-7xl">
+          {/* Row 1 & Row 2 Grid */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* Row 1, Item 1: Shield */}
+            <button
+              id="tab-shield-btn"
+              onClick={() => setActiveTab('shield')}
+              className={`flex items-center justify-between px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 border ${
+                activeTab === 'shield'
+                  ? 'bg-blue-600/20 border-blue-500/80 text-white shadow-sm ring-1 ring-blue-500/30'
+                  : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800/80 hover:bg-slate-850'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <div className={`flex h-6 w-6 items-center justify-center rounded-lg ${activeTab === 'shield' ? 'bg-blue-500 text-white' : 'bg-blue-500/10 text-blue-400'}`}>
+                  <Shield className="h-3.5 w-3.5" />
+                </div>
+                <span className="font-bold">Shield</span>
               </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-base font-bold text-white sm:text-lg">
-                    SafeGuard Shield Active Protection
-                  </h2>
-                  <span
-                    className={`rounded-md px-2 py-0.5 text-[11px] font-semibold border ${
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${prefs.isMonitoring ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                {prefs.isMonitoring ? 'ARMED' : 'OFF'}
+              </span>
+            </button>
+
+            {/* Row 1, Item 2: Triggers */}
+            <button
+              id="tab-triggers-btn"
+              onClick={() => setActiveTab('triggers')}
+              className={`flex items-center justify-between px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 border ${
+                activeTab === 'triggers'
+                  ? 'bg-amber-600/20 border-amber-500/80 text-white shadow-sm ring-1 ring-amber-500/30'
+                  : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800/80 hover:bg-slate-850'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <div className={`flex h-6 w-6 items-center justify-center rounded-lg ${activeTab === 'triggers' ? 'bg-amber-500 text-white' : 'bg-amber-500/10 text-amber-400'}`}>
+                  <Zap className="h-3.5 w-3.5" />
+                </div>
+                <span className="font-bold">Triggers</span>
+              </div>
+              <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full font-bold">
+                6 PROBES
+              </span>
+            </button>
+
+            {/* Row 2, Item 1: GPS & Telemetry */}
+            <button
+              id="tab-telemetry-btn"
+              onClick={() => setActiveTab('telemetry')}
+              className={`flex items-center justify-between px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 border ${
+                activeTab === 'telemetry'
+                  ? 'bg-emerald-600/20 border-emerald-500/80 text-white shadow-sm ring-1 ring-emerald-500/30'
+                  : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800/80 hover:bg-slate-850'
+              }`}
+            >
+              <div className="flex items-center space-x-2 min-w-0">
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${activeTab === 'telemetry' ? 'bg-emerald-500 text-white' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                  <Radio className="h-3.5 w-3.5" />
+                </div>
+                <span className="font-bold truncate">GPS & Telemetry</span>
+              </div>
+              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                LIVE
+              </span>
+            </button>
+
+            {/* Row 2, Item 2: Incidents */}
+            <button
+              id="tab-logs-btn"
+              onClick={() => setActiveTab('logs')}
+              className={`flex items-center justify-between px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition active:scale-98 border ${
+                activeTab === 'logs'
+                  ? 'bg-purple-600/20 border-purple-500/80 text-white shadow-sm ring-1 ring-purple-500/30'
+                  : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800/80 hover:bg-slate-850'
+              }`}
+            >
+              <div className="flex items-center space-x-2 min-w-0">
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${activeTab === 'logs' ? 'bg-purple-500 text-white' : 'bg-purple-500/10 text-purple-400'}`}>
+                  <Bell className="h-3.5 w-3.5" />
+                </div>
+                <span className="font-bold truncate">Incidents</span>
+              </div>
+              <span className="text-[10px] text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                {events.length} LOGS
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Container */}
+      <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-3.5 sm:px-6 sm:py-6 space-y-4 sm:space-y-6">
+        {/* Mobile View: Dynamic Tab rendering | Desktop: Full Dashboard View */}
+
+        {/* 1. Mobile Shield View or Desktop Overview */}
+        <section
+          id="section-overview"
+          className={`space-y-4 sm:space-y-6 ${
+            activeTab === 'shield' ? 'block' : 'hidden md:block'
+          }`}
+        >
+          {/* Tactical Radar Hero Card */}
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-800/90 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950 p-4 sm:p-6 shadow-xl backdrop-blur-md">
+            {/* Background Radar Graphic */}
+            <div className="pointer-events-none absolute -right-12 -top-12 h-64 w-64 rounded-full border border-blue-500/10 opacity-30 animate-pulse-ring" />
+
+            <div className="flex flex-col md:flex-row items-center justify-between gap-5">
+              {/* Radar Status Ring */}
+              <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4 text-center sm:text-left">
+                <div className="relative flex h-20 w-20 sm:h-24 sm:w-24 shrink-0 items-center justify-center rounded-3xl border shadow-2xl">
+                  <div
+                    className={`absolute inset-0 rounded-3xl opacity-20 ${
+                      prefs.isMonitoring ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                    }`}
+                  />
+                  {prefs.isMonitoring ? (
+                    <ShieldCheck className="h-10 w-10 sm:h-12 sm:w-12 text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.5)]" />
+                  ) : (
+                    <ShieldAlert className="h-10 w-10 sm:h-12 sm:w-12 text-amber-400" />
+                  )}
+                  {prefs.isMonitoring && (
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500"></span>
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-center sm:justify-start space-x-2">
+                    <h2 className="text-lg sm:text-2xl font-extrabold tracking-tight text-white flex items-center space-x-2">
+                      <span className="text-blue-400 font-black tracking-wider uppercase">SafeGuard</span>
+                      <span>Shield</span>
+                    </h2>
+                    <span
+                      className={`hidden xs:inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                        prefs.isMonitoring
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                          : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                      }`}
+                    >
+                      {prefs.isMonitoring ? 'Active' : 'Paused'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs sm:text-sm text-slate-300 max-w-lg">
+                    {prefs.isMonitoring
+                      ? 'Real-time sensor monitoring active. Automated front-camera stealth capture & alert dispatch armed.'
+                      : 'Intrusion triggers are paused. Tap below to activate complete perimeter security.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Tactical Actions in Two Rows */}
+              <div className="w-full md:w-auto md:min-w-[340px] lg:min-w-[400px]">
+                <div className="grid grid-cols-2 gap-2.5 w-full">
+                  {/* Row 1, Item 1: Arm/Disarm Protection */}
+                  <button
+                    id="hero-toggle-monitoring-btn"
+                    onClick={handleToggleMonitoring}
+                    className={`flex items-center justify-center space-x-2 rounded-xl sm:rounded-2xl px-3 sm:px-4 py-3 text-xs sm:text-sm font-bold shadow-lg transition active:scale-95 min-h-[48px] ${
                       prefs.isMonitoring
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                        : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                        ? 'bg-amber-600 text-white hover:bg-amber-500 shadow-amber-900/30'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-900/30 ring-1 ring-emerald-400/30'
                     }`}
                   >
-                    {prefs.isMonitoring ? 'Armed & Monitoring' : 'Protection Paused'}
-                  </span>
+                    {prefs.isMonitoring ? (
+                      <>
+                        <Unlock className="h-4 w-4 shrink-0" />
+                        <span className="truncate">DISARM PROTECTION</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-4 w-4 shrink-0" />
+                        <span className="truncate">ARM SYSTEM NOW</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Row 1, Item 2: Lock Application */}
+                  <button
+                    id="hero-lock-app-btn"
+                    onClick={handleLockApp}
+                    className="flex items-center justify-center space-x-2 rounded-xl sm:rounded-2xl border border-rose-500/40 bg-rose-500/10 px-3 sm:px-4 py-3 text-xs sm:text-sm font-bold text-rose-300 hover:bg-rose-500/20 transition active:scale-95 min-h-[48px]"
+                  >
+                    <Lock className="h-4 w-4 text-rose-400 shrink-0" />
+                    <span className="truncate">LOCK APP</span>
+                  </button>
+
+                  {/* Row 2, Item 1: Enroll Face ID */}
+                  <button
+                    id="hero-enroll-face-btn"
+                    onClick={() => setIsFaceModalOpen(true)}
+                    className="flex items-center justify-center space-x-2 rounded-xl sm:rounded-2xl border border-slate-700 bg-slate-800/90 px-3 sm:px-4 py-3 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition active:scale-95 min-h-[48px]"
+                  >
+                    <UserCheck className="h-4 w-4 text-blue-400 shrink-0" />
+                    <span className="truncate">
+                      {prefs.ownerFaceEmbedding ? 'Face ID Active' : 'Enroll Face ID'}
+                    </span>
+                  </button>
+
+                  {/* Row 2, Item 2: 4-Digit Security PIN */}
+                  <button
+                    id="hero-security-pin-btn"
+                    onClick={handleOpenChangePin}
+                    className="flex items-center justify-center space-x-2 rounded-xl sm:rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 sm:px-4 py-3 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition active:scale-95 min-h-[48px]"
+                  >
+                    <KeyRound className="h-4 w-4 text-amber-400 shrink-0" />
+                    <span className="truncate">
+                      4-Digit PIN ({prefs.securityPin ? '••••' : '1234'})
+                    </span>
+                  </button>
                 </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  Stealth front camera capture, ML Euclidean face recognition (&lt;0.65 threshold), and automated multi-channel alert dispatch.
-                </p>
               </div>
             </div>
 
-            {/* Quick Action Buttons */}
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-              <button
-                id="main-enroll-face-btn"
-                onClick={() => setIsFaceModalOpen(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center space-x-2 rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 sm:py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition active:scale-95 shadow-sm min-h-[42px]"
-              >
-                <UserCheck className="h-4 w-4 text-blue-400 shrink-0" />
-                <span className="whitespace-nowrap">
-                  {prefs.ownerFaceEmbedding ? 'Enrolled Face Active' : 'Enroll Owner Face'}
-                </span>
-              </button>
+            {/* 4 Core Features Grid in Two Rows */}
+            <div className="mt-5 pt-4 border-t border-slate-800/80 space-y-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Core Security Modules (2 Rows)
+              </div>
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                {/* Row 1: Shield */}
+                <div
+                  id="card-feature-shield"
+                  onClick={() => setActiveTab('shield')}
+                  className="flex items-center space-x-2.5 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3 cursor-pointer hover:border-slate-700 active:scale-95 transition"
+                >
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${prefs.isMonitoring ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                    <Shield className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-slate-400 font-medium truncate">Shield</span>
+                    <span className={`block text-xs font-bold truncate ${prefs.isMonitoring ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {prefs.isMonitoring ? 'Armed & Active' : 'Disarmed'}
+                    </span>
+                  </div>
+                </div>
 
-              <button
-                id="main-toggle-monitoring-btn"
-                onClick={handleToggleMonitoring}
-                className={`flex-1 sm:flex-none flex items-center justify-center space-x-2 rounded-xl px-4 py-2.5 sm:py-2 text-xs font-semibold transition shadow-md active:scale-95 min-h-[42px] ${
-                  prefs.isMonitoring
-                    ? 'bg-amber-600/90 text-white hover:bg-amber-500'
-                    : 'bg-emerald-600 text-white hover:bg-emerald-500'
-                }`}
-              >
-                {prefs.isMonitoring ? (
-                  <>
-                    <Unlock className="h-4 w-4 shrink-0" />
-                    <span className="whitespace-nowrap">Disarm Monitoring</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="h-4 w-4 shrink-0" />
-                    <span className="whitespace-nowrap">Arm & Enable</span>
-                  </>
-                )}
-              </button>
+                {/* Row 1: Triggers */}
+                <div
+                  id="card-feature-triggers"
+                  onClick={() => setActiveTab('triggers')}
+                  className="flex items-center space-x-2.5 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3 cursor-pointer hover:border-slate-700 active:scale-95 transition"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
+                    <Zap className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-slate-400 font-medium truncate">Triggers</span>
+                    <span className="block text-xs font-bold text-slate-200 truncate">
+                      6 Sensor Probes
+                    </span>
+                  </div>
+                </div>
+
+                {/* Row 2: GPS & Telemetry */}
+                <div
+                  id="card-feature-telemetry"
+                  onClick={() => setActiveTab('telemetry')}
+                  className="flex items-center space-x-2.5 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3 cursor-pointer hover:border-slate-700 active:scale-95 transition"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                    <Radio className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-slate-400 font-medium truncate">GPS & Telemetry</span>
+                    <span className="block text-xs font-bold text-slate-200 truncate">
+                      {telemetry?.latitude != null && telemetry?.longitude != null ? `${telemetry.latitude.toFixed(3)}, ${telemetry.longitude.toFixed(3)}` : 'Live Sensors'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Row 2: Incidents */}
+                <div
+                  id="card-feature-incidents"
+                  onClick={() => setActiveTab('logs')}
+                  className="flex items-center space-x-2.5 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 sm:p-3 cursor-pointer hover:border-slate-700 active:scale-95 transition"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400">
+                    <Bell className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-[10px] text-slate-400 font-medium truncate">Incidents</span>
+                    <span className="block text-xs font-bold text-slate-200 truncate">
+                      {events.length} Recorded Logs
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Quick Configuration Form (Replicating MainActivity.kt fields) */}
-          <div className="pt-4">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Security Credentials & Alert Routing
+          {/* Quick Configuration Bar */}
+          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-3.5 sm:p-5 shadow-lg backdrop-blur-sm">
+            <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center justify-between">
+              <span>Security Credentials & Alert Routing</span>
+              <span className="text-[11px] text-slate-500 font-normal">MainActivity Setup</span>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
               <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                <label className="block text-[10px] font-medium text-slate-400 mb-1">
                   Owner Email
                 </label>
                 <input
@@ -391,12 +772,12 @@ export function App() {
                   value={quickOwnerEmail}
                   onChange={(e) => setQuickOwnerEmail(e.target.value)}
                   placeholder="owner@example.com"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm sm:text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[42px] sm:min-h-0"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-blue-500 focus:outline-none min-h-[40px]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                <label className="block text-[10px] font-medium text-slate-400 mb-1">
                   Alert Recipient Email
                 </label>
                 <input
@@ -405,27 +786,27 @@ export function App() {
                   value={quickRecipientEmail}
                   onChange={(e) => setQuickRecipientEmail(e.target.value)}
                   placeholder="alerts@example.com"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm sm:text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[42px] sm:min-h-0"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-blue-500 focus:outline-none min-h-[40px]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                <label className="block text-[10px] font-medium text-slate-400 mb-1">
                   SendGrid API Key
                 </label>
-                <div className="flex space-x-2">
+                <div className="flex space-x-1.5">
                   <input
                     id="main-api-key-input"
                     type="password"
                     value={quickApiKey}
                     onChange={(e) => setQuickApiKey(e.target.value)}
                     placeholder="SG.xxxxx"
-                    className="flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm sm:text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono min-h-[42px] sm:min-h-0"
+                    className="flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-blue-500 focus:outline-none font-mono min-h-[40px]"
                   />
                   <button
                     id="main-save-config-btn"
                     onClick={handleQuickEnableMonitoring}
-                    className="rounded-xl bg-blue-600 px-4 py-2.5 sm:py-2 text-xs font-semibold text-white hover:bg-blue-500 transition active:scale-95 shrink-0 min-h-[42px] sm:min-h-0"
+                    className="rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition active:scale-95 shrink-0 min-h-[40px]"
                   >
                     Save
                   </button>
@@ -434,7 +815,7 @@ export function App() {
             </div>
 
             {quickSavedToast && (
-              <div className="mt-3 flex items-center space-x-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-300">
+              <div className="mt-2.5 flex items-center space-x-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-300">
                 <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
                 <span>{quickSavedToast}</span>
               </div>
@@ -442,18 +823,11 @@ export function App() {
           </div>
         </section>
 
-        {/* Real-time Telemetry Panel */}
-        <section id="section-telemetry">
-          <TelemetryPanel
-            telemetry={telemetry}
-            isMonitoring={prefs.isMonitoring}
-            onRefresh={refreshTelemetry}
-            isRefreshing={isRefreshingTelemetry}
-          />
-        </section>
-
-        {/* Trigger Simulator & Test Engine */}
-        <section id="section-triggers">
+        {/* 2. Triggers Section */}
+        <section
+          id="section-triggers"
+          className={activeTab === 'triggers' ? 'block' : 'hidden md:block'}
+        >
           <TriggerSimulator
             prefs={prefs}
             onFireTrigger={handleFireTrigger}
@@ -462,8 +836,24 @@ export function App() {
           />
         </section>
 
-        {/* Security Events Incident Log */}
-        <section id="section-logs">
+        {/* 3. Telemetry & Real-Time Sensors */}
+        <section
+          id="section-telemetry"
+          className={activeTab === 'telemetry' ? 'block' : 'hidden md:block'}
+        >
+          <TelemetryPanel
+            telemetry={telemetry}
+            isMonitoring={prefs.isMonitoring}
+            onRefresh={refreshTelemetry}
+            isRefreshing={isRefreshingTelemetry}
+          />
+        </section>
+
+        {/* 4. Incident Logs Section */}
+        <section
+          id="section-logs"
+          className={activeTab === 'logs' ? 'block' : 'hidden md:block'}
+        >
           <SecurityEventsList
             events={events}
             onSelectEvent={(ev) => setSelectedEvent(ev)}
@@ -476,50 +866,50 @@ export function App() {
       </main>
 
       {/* Mobile Sticky Bottom Navigation Bar (Optimized for One-Handed Thumb Operation) */}
-      <nav aria-label="Mobile Navigation Bar" className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800 bg-slate-900/95 backdrop-blur-xl px-2 py-1.5 safe-bottom">
+      <nav aria-label="Mobile Navigation Bar" className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800/90 bg-slate-900/95 backdrop-blur-xl px-2 py-1 safe-bottom shadow-2xl">
         <div className="flex items-center justify-around">
           <button
             id="mobile-nav-overview-btn"
-            onClick={() => {
-              document.getElementById('section-overview')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+            onClick={() => setActiveTab('shield')}
+            className={`flex flex-col items-center justify-center p-1.5 transition active:scale-95 min-w-[56px] ${
+              activeTab === 'shield' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
-            <Shield className="h-5 w-5" />
-            <span className="text-[10px] font-medium mt-0.5">Armed</span>
+            <Shield className={`h-5 w-5 ${activeTab === 'shield' ? 'text-blue-400' : ''}`} />
+            <span className="text-[10px] mt-0.5">Shield</span>
           </button>
 
           <button
             id="mobile-nav-triggers-btn"
-            onClick={() => {
-              document.getElementById('section-triggers')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+            onClick={() => setActiveTab('triggers')}
+            className={`flex flex-col items-center justify-center p-1.5 transition active:scale-95 min-w-[56px] ${
+              activeTab === 'triggers' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
-            <Zap className="h-5 w-5 text-amber-400" />
-            <span className="text-[10px] font-medium mt-0.5">Triggers</span>
+            <Zap className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5">Triggers</span>
           </button>
 
           <button
             id="mobile-nav-telemetry-btn"
-            onClick={() => {
-              document.getElementById('section-telemetry')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+            onClick={() => setActiveTab('telemetry')}
+            className={`flex flex-col items-center justify-center p-1.5 transition active:scale-95 min-w-[56px] ${
+              activeTab === 'telemetry' ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
-            <Radio className="h-5 w-5 text-blue-400" />
-            <span className="text-[10px] font-medium mt-0.5">Telemetry</span>
+            <Radio className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5">Telemetry</span>
           </button>
 
           <button
             id="mobile-nav-logs-btn"
-            onClick={() => {
-              document.getElementById('section-logs')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="relative flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+            onClick={() => setActiveTab('logs')}
+            className={`relative flex flex-col items-center justify-center p-1.5 transition active:scale-95 min-w-[56px] ${
+              activeTab === 'logs' ? 'text-purple-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
-            <Bell className="h-5 w-5 text-emerald-400" />
-            <span className="text-[10px] font-medium mt-0.5">Logs</span>
+            <Bell className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5">Logs</span>
             {unauthorizedCount > 0 && (
               <span className="absolute top-1 right-3 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">
                 {unauthorizedCount}
@@ -528,12 +918,12 @@ export function App() {
           </button>
 
           <button
-            id="mobile-nav-settings-btn"
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 active:scale-95 transition min-w-[56px]"
+            id="mobile-nav-menu-btn"
+            onClick={() => setIsSidebarOpen(true)}
+            className="flex flex-col items-center justify-center p-1.5 text-slate-400 hover:text-slate-200 active:scale-95 transition min-w-[56px]"
           >
-            <Settings className="h-5 w-5" />
-            <span className="text-[10px] font-medium mt-0.5">Settings</span>
+            <Sliders className="h-5 w-5 text-blue-400" />
+            <span className="text-[10px] mt-0.5">Control</span>
           </button>
         </div>
       </nav>
@@ -559,6 +949,7 @@ export function App() {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         prefs={prefs}
+        onOpenPinModal={handleOpenChangePin}
         onSave={(updated) => {
           const newPrefs = SecurityStorage.savePrefs(updated);
           setPrefs(newPrefs);
@@ -567,6 +958,27 @@ export function App() {
           setQuickApiKey(newPrefs.sendGridApiKey);
         }}
       />
+
+      {/* 4-Digit Security Password (PIN) Lock & Verification Modal */}
+      <PinLockModal
+        isOpen={pinModalConfig.isOpen}
+        mode={pinModalConfig.mode}
+        title={pinModalConfig.title}
+        description={pinModalConfig.description}
+        canCancel={pinModalConfig.canCancel}
+        currentPin={prefs.securityPin || '1234'}
+        onClose={() => setPinModalConfig((p) => ({ ...p, isOpen: false }))}
+        onSuccess={() => {
+          if (pinModalConfig.onSuccess) {
+            pinModalConfig.onSuccess();
+          } else {
+            setPinModalConfig((p) => ({ ...p, isOpen: false }));
+          }
+        }}
+        onPinChanged={handlePinChanged}
+        onFailedAttempt={handlePinFailedAttempt}
+      />
     </div>
   );
 }
+

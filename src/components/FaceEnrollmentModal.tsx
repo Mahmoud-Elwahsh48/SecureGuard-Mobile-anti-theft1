@@ -3,13 +3,10 @@ import {
   X,
   Camera,
   UserCheck,
-  RefreshCw,
   Trash2,
   CheckCircle,
   AlertCircle,
   ShieldCheck,
-  Video,
-  Eye,
 } from 'lucide-react';
 import { SecurityPrefsState } from '../types';
 import { FaceVerification } from '../utils/faceVerification';

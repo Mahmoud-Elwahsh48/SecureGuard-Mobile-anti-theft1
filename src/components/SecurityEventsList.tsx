@@ -7,8 +7,6 @@ import {
   Trash2,
   Download,
   Search,
-  Filter,
-  ExternalLink,
   MapPin,
   Battery,
   Wifi,

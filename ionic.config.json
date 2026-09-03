@@ -1,0 +1,7 @@
+{
+  "name": "safeguard-shield",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "custom"
+}

@@ -72,6 +72,93 @@ export const FaceVerification = {
     });
   },
 
+  detectPersonInCanvas(canvas: HTMLCanvasElement): {
+    personDetected: boolean;
+    confidence: number;
+    label: string;
+  } {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) {
+      return { personDetected: false, confidence: 0, label: 'No Camera Feed' };
+    }
+
+    try {
+      const box = {
+        x: Math.floor(canvas.width * 0.15),
+        y: Math.floor(canvas.height * 0.1),
+        width: Math.floor(canvas.width * 0.7),
+        height: Math.floor(canvas.height * 0.75),
+      };
+
+      const imgData = ctx.getImageData(box.x, box.y, box.width, box.height);
+      const data = imgData.data;
+
+      let skinTonePixels = 0;
+      let totalLuminance = 0;
+      const luminances: number[] = [];
+
+      for (let i = 0; i < data.length; i += 16) {
+        // Sample every 4th pixel for speed and precision
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        // Standard Human Skin Tone chromaticity envelope
+        const isSkinTone =
+          r > 65 &&
+          g > 40 &&
+          b > 20 &&
+          r > g &&
+          r > b &&
+          r - g >= 10 &&
+          Math.abs(r - g) <= 120 &&
+          r - b >= 15;
+
+        if (isSkinTone) {
+          skinTonePixels++;
+        }
+
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        totalLuminance += lum;
+        luminances.push(lum);
+      }
+
+      const sampledCount = luminances.length || 1;
+      const avgLum = totalLuminance / sampledCount;
+
+      // Variance / standard deviation
+      let varianceSum = 0;
+      for (let j = 0; j < sampledCount; j++) {
+        const diff = luminances[j] - avgLum;
+        varianceSum += diff * diff;
+      }
+      const stdDev = Math.sqrt(varianceSum / sampledCount);
+      const skinRatio = skinTonePixels / sampledCount;
+
+      // Person presence determination:
+      // If skin tones are present (> 3.5%) AND scene has sufficient contour variance (> 16)
+      const hasPersonFeatures = skinRatio > 0.035 && stdDev > 16 && avgLum > 20 && avgLum < 245;
+
+      const confidence = hasPersonFeatures
+        ? Math.min(99, Math.round((skinRatio * 200) + (stdDev / 2)))
+        : Math.max(5, Math.round(100 - (skinRatio * 300) - stdDev));
+
+      return {
+        personDetected: hasPersonFeatures,
+        confidence,
+        label: hasPersonFeatures
+          ? 'Subject Detected in Frame'
+          : 'Sensor Capture Frame',
+      };
+    } catch {
+      return {
+        personDetected: false,
+        confidence: 50,
+        label: 'Sensor Capture Frame',
+      };
+    }
+  },
+
   calculateDistance(candidate: number[], baseline: number[]): number {
     if (!candidate.length || !baseline.length) return 1.0;
     const len = Math.min(candidate.length, baseline.length);

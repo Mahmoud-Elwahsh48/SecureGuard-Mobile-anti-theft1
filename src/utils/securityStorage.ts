@@ -7,15 +7,17 @@ const DEFAULT_PREFS: SecurityPrefsState = {
   ownerEmail: 'mahmoudelwahsh48@gmail.com',
   alertRecipientEmail: 'mahmoudelwahsh48@gmail.com',
   sendGridApiKey: '',
-  emailJsServiceId: 'service_pegyggo',
-  emailJsTemplateId: 'template_safeguard',
-  emailJsPublicKey: '',
+  emailJsServiceId: 'service_i42p396',
+  emailJsTemplateId: 'template_n69o5ue',
+  emailJsPublicKey: 'Tm2xBGIqxUeDSy_A2',
   ownerFaceEmbedding: null,
   ownerFacePhoto: null,
   enrolledTimestamp: null,
   isMonitoring: true,
   autoCapture: true,
   soundAlert: true,
+  securityPin: '1234',
+  requirePinToDisarm: true,
 };
 
 const INITIAL_SAMPLE_EVENTS: SecurityEvent[] = [
@@ -54,7 +56,20 @@ export const SecurityStorage = {
     try {
       const stored = localStorage.getItem(PREFS_STORAGE_KEY);
       if (!stored) return DEFAULT_PREFS;
-      return { ...DEFAULT_PREFS, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored);
+      return {
+        ...DEFAULT_PREFS,
+        ...parsed,
+        emailJsServiceId:
+          parsed.emailJsServiceId === 'service_pegyggo' || !parsed.emailJsServiceId
+            ? DEFAULT_PREFS.emailJsServiceId
+            : parsed.emailJsServiceId,
+        emailJsTemplateId:
+          parsed.emailJsTemplateId === 'template_safeguard' || !parsed.emailJsTemplateId
+            ? DEFAULT_PREFS.emailJsTemplateId
+            : parsed.emailJsTemplateId,
+        emailJsPublicKey: parsed.emailJsPublicKey || DEFAULT_PREFS.emailJsPublicKey,
+      };
     } catch {
       return DEFAULT_PREFS;
     }
