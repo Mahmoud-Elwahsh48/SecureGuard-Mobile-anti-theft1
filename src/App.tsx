@@ -27,7 +27,11 @@ import { FaceEnrollmentModal } from './components/FaceEnrollmentModal';
 import { EventDetailModal } from './components/EventDetailModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PinLockModal } from './components/PinLockModal';
-import { CameraStealthManager, generateStandbySensorFigure } from './components/CameraStealthManager';
+import { CameraStealthManager } from './components/CameraStealthManager';
+import { CameraManager } from './utils/cameraManager';
+import { DevicePermissionsModal } from './components/DevicePermissionsModal';
+import { DevicePermissionsBanner } from './components/DevicePermissionsBanner';
+import { PermissionManager, AppPermissionsState } from './utils/permissionManager';
 
 export function App() {
   const [prefs, setPrefs] = useState<SecurityPrefsState>(SecurityStorage.getPrefs());
@@ -35,6 +39,8 @@ export function App() {
   const [telemetry, setTelemetry] = useState<DeviceTelemetryData | null>(null);
   const [isRefreshingTelemetry, setIsRefreshingTelemetry] = useState(false);
   const [isProcessingTrigger, setIsProcessingTrigger] = useState(false);
+  const [permissionsState, setPermissionsState] = useState<AppPermissionsState>(PermissionManager.getState());
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [lastTriggerResult, setLastTriggerResult] = useState<{
     eventType: string;
     isMatch: boolean;
@@ -63,11 +69,12 @@ export function App() {
   // Camera stealth capture delegate
   const stealthCaptureRef = useRef<
     | ((
-        faceMode: 'camera' | 'owner_simulated' | 'intruder_simulated'
+        faceMode?: string
       ) => Promise<{
-        photoDataUrl: string;
+        photoDataUrl?: string;
         embedding: number[];
         personDetected?: boolean;
+        error?: string;
       }>)
     | null
   >(null);
@@ -114,10 +121,33 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const unsub = DeviceTelemetry.subscribe((data) => {
+      setTelemetry(data);
+    });
     refreshTelemetry();
     const interval = setInterval(refreshTelemetry, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
   }, [refreshTelemetry]);
+
+  // Proactively check all permissions and require them when running on device
+  useEffect(() => {
+    const unsub = PermissionManager.subscribe((st) => {
+      setPermissionsState(st);
+    });
+
+    PermissionManager.checkAllPermissions().then((st) => {
+      setPermissionsState(st);
+      // Require permissions: if any required permission is not active on startup, prompt user
+      if (!st.allActive) {
+        setIsPermissionsModalOpen(true);
+      }
+    });
+
+    return unsub;
+  }, []);
 
   // Handle Quick Save & Enable Monitoring from Main View
   const handleQuickEnableMonitoring = () => {
@@ -144,6 +174,29 @@ export function App() {
     isOpen: false,
     mode: 'unlock_app',
   });
+
+  // Real-time HUD Security Notification alert banner
+  const [hudNotification, setHudNotification] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const handleNotification = (e: Event) => {
+      const customEvent = e as CustomEvent<{ title: string; body: string }>;
+      if (customEvent.detail) {
+        setHudNotification(customEvent.detail);
+        setTimeout(() => {
+          setHudNotification((cur) => (cur?.title === customEvent.detail.title ? null : cur));
+        }, 4500);
+      }
+    };
+
+    window.addEventListener('safeguard:notification', handleNotification);
+    return () => {
+      window.removeEventListener('safeguard:notification', handleNotification);
+    };
+  }, []);
 
   // Handle Disarm requiring 4-digit PIN verification
   const handleToggleMonitoring = () => {
@@ -274,72 +327,70 @@ export function App() {
   }, []);
 
   // Execute Security Monitoring Trigger
-  const handleFireTrigger = async (
-    triggerName: string,
-    faceMode: 'camera' | 'owner_simulated' | 'intruder_simulated'
-  ) => {
+  const handleFireTrigger = async (triggerName: string) => {
+    // If security monitoring is disarmed, automatically arm it for this trigger test
     if (!prefs.isMonitoring) {
-      alert('Security monitoring is currently disarmed. Please enable monitoring first.');
-      return;
+      const updatedPrefs = { ...prefs, isMonitoring: true };
+      setPrefs(updatedPrefs);
+      SecurityStorage.savePrefs(updatedPrefs);
     }
 
     setIsProcessingTrigger(true);
 
     try {
-      // 1. Capture figure & face embedding
+      // 1. Capture real optical figure directly from device camera with permissions
       let photoDataUrl: string | undefined = undefined;
       let candidateEmbedding: number[] = [];
       let personDetected: boolean | undefined = undefined;
 
-      if (stealthCaptureRef.current) {
-        try {
-          const captureResult = await stealthCaptureRef.current(faceMode);
-          photoDataUrl = captureResult.photoDataUrl || undefined;
-          candidateEmbedding = captureResult.embedding;
-          personDetected = captureResult.personDetected;
-        } catch (captureErr) {
-          console.warn('Stealth camera capture notice:', captureErr);
+      try {
+        // Direct real frame capture from pre-warmed / active stream (<5ms)
+        const realCapture = await CameraManager.captureRealFigure(null, triggerName);
+        if (realCapture && realCapture.photoDataUrl) {
+          photoDataUrl = realCapture.photoDataUrl;
+          candidateEmbedding = realCapture.embedding;
+          personDetected = realCapture.personDetected ?? true;
+        } else if (stealthCaptureRef.current) {
+          const stealthRes = await stealthCaptureRef.current(triggerName);
+          if (stealthRes && stealthRes.photoDataUrl) {
+            photoDataUrl = stealthRes.photoDataUrl;
+            candidateEmbedding = stealthRes.embedding;
+            personDetected = stealthRes.personDetected ?? true;
+          }
         }
+      } catch (captureErr) {
+        console.warn('Real camera capture notice:', captureErr);
       }
 
-      // Guaranteed figure capture fallback
-      if (!photoDataUrl) {
-        const standbyCapture = generateStandbySensorFigure(faceMode);
-        photoDataUrl = standbyCapture.photoDataUrl;
-        candidateEmbedding = standbyCapture.embedding;
-        personDetected = true;
-      }
-
-      // 2. Perform Face Verification & Biometric Evaluation
+      // 2. Perform Face Verification & Biometric Evaluation against real owner baseline
       let isOwner = false;
-      if (faceMode === 'owner_simulated') {
-        isOwner = true;
-        personDetected = true;
-      } else if (faceMode === 'intruder_simulated') {
-        isOwner = false;
-        personDetected = true;
-      } else {
-        // Live camera
+      if (prefs.ownerFaceEmbedding && candidateEmbedding.length > 0) {
         const matchResult = FaceVerification.verifyMatch(
           candidateEmbedding,
           prefs.ownerFaceEmbedding
         );
         isOwner = matchResult.isMatch;
+      } else if (!prefs.ownerFaceEmbedding) {
+        // If owner hasn't enrolled face ID yet, treat as unauthorized / un-enrolled
+        isOwner = false;
       }
 
       let finalEventType = triggerName;
-      let message = 'Unauthorized access suspected';
+      let message = 'Security condition detected';
 
       if (isOwner) {
         finalEventType = triggerName;
-        message = 'Security condition detected and owner verified';
-      } else {
+        message = 'Security trigger fired - Authorized owner face verified';
+      } else if (prefs.ownerFaceEmbedding) {
         finalEventType = `${triggerName} - Unrecognized Subject`;
-        message = 'Unauthorized subject suspected';
+        message = 'Unauthorized subject detected by camera';
+      } else {
+        finalEventType = `${triggerName} - No Face Enrolled`;
+        message = 'Security trigger fired (Owner Face ID not yet enrolled)';
       }
 
-      // 3. Collect real-time telemetry snapshot
-      const currentTelemetry = await DeviceTelemetry.collectFullTelemetry();
+      // 3. Collect fast telemetry snapshot (<5ms)
+      const currentTelemetry = await DeviceTelemetry.collectFastTelemetry(telemetry);
       setTelemetry(currentTelemetry);
 
       // 4. Create Security Event in DB
@@ -359,7 +410,9 @@ export function App() {
         status: isOwner ? 'authorized' : 'pending',
         deviceInfo: currentTelemetry.deviceModel,
         personDetected: personDetected ?? (photoDataUrl ? true : null),
-        figureDescription: photoDataUrl ? 'Incident figure captured' : 'No photo captured',
+        figureDescription: photoDataUrl
+          ? 'Real optical figure captured via device camera'
+          : 'Camera permission required to capture figure',
       });
 
       setEvents(SecurityStorage.getAllEvents());
@@ -377,19 +430,31 @@ export function App() {
         playAlertChime(!isOwner);
       }
 
-      // 5. If Unauthorized or Telemetry Breach: Dispatch alert email payload
+      // Finish trigger processing immediately so UI updates instantly
+      setIsProcessingTrigger(false);
+
+      // 5. If Unauthorized or Telemetry Breach: Dispatch alert email & device notification in background without blocking UI
       if (!isOwner) {
-        const dispatchResult = await AlertDispatcher.dispatchAlert(newEvent, prefs);
-        if (dispatchResult.success) {
-          SecurityStorage.updateEventStatus(newEvent.id, 'sent');
-        } else {
-          SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
-        }
-        setEvents(SecurityStorage.getAllEvents());
+        PermissionManager.notifyUser(
+          'Security Breach Detected - SafeGuard Shield',
+          `Unauthorized figure captured during ${triggerName}. Alert email dispatched.`
+        );
+
+        AlertDispatcher.dispatchAlert(newEvent, prefs)
+          .then((dispatchResult) => {
+            if (dispatchResult.success) {
+              SecurityStorage.updateEventStatus(newEvent.id, 'sent');
+            } else {
+              SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
+            }
+            setEvents(SecurityStorage.getAllEvents());
+          })
+          .catch((dispatchErr) => {
+            console.warn('Background alert dispatch notice:', dispatchErr);
+          });
       }
     } catch (err) {
       console.error('Trigger monitoring failed', err);
-    } finally {
       setIsProcessingTrigger(false);
     }
   };
@@ -435,12 +500,46 @@ export function App() {
       {/* Background Stealth Camera Manager */}
       <CameraStealthManager onRegisterCaptureFunction={handleRegisterStealthCapture} />
 
+      {/* Real-time Security Notification Toast HUD */}
+      {hudNotification && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-md animate-bounce-short">
+          <div className="flex items-center space-x-3 rounded-2xl border border-blue-500/50 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-md text-white">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
+              <Bell className="h-5 w-5 animate-pulse" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">
+                  SafeGuard Notification
+                </span>
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-ping" />
+              </div>
+              <h5 className="text-xs sm:text-sm font-bold truncate text-white">
+                {hudNotification.title}
+              </h5>
+              <p className="text-[11px] text-slate-300 truncate">
+                {hudNotification.body}
+              </p>
+            </div>
+            <button
+              onClick={() => setHudNotification(null)}
+              className="text-slate-400 hover:text-white text-xs p-1"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Navbar */}
       <Navbar
         prefs={prefs}
         onOpenSidebar={() => setIsSidebarOpen(true)}
         unauthorizedCount={unauthorizedCount}
         onLockApp={handleLockApp}
+        permissions={permissionsState}
+        onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
+        onToggleMonitoring={handleToggleMonitoring}
       />
 
       {/* Control Panel Sidebar Drawer */}
@@ -453,6 +552,8 @@ export function App() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenChangePin={handleOpenChangePin}
         onLockApp={handleLockApp}
+        onOpenPermissions={() => setIsPermissionsModalOpen(true)}
+        permissions={permissionsState}
         onRefreshTelemetry={refreshTelemetry}
         isRefreshing={isRefreshingTelemetry}
         unauthorizedCount={unauthorizedCount}
@@ -555,6 +656,12 @@ export function App() {
 
       {/* Main Container */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-3.5 sm:px-6 sm:py-6 space-y-4 sm:space-y-6">
+        {/* Device Permissions Required & Active Status Banner */}
+        <DevicePermissionsBanner
+          permissions={permissionsState}
+          onOpenModal={() => setIsPermissionsModalOpen(true)}
+        />
+
         {/* Mobile View: Dynamic Tab rendering | Desktop: Full Dashboard View */}
 
         {/* 1. Mobile Shield View or Desktop Overview */}
@@ -833,6 +940,8 @@ export function App() {
             onFireTrigger={handleFireTrigger}
             isProcessing={isProcessingTrigger}
             lastResult={lastTriggerResult}
+            permissions={permissionsState}
+            onOpenPermissions={() => setIsPermissionsModalOpen(true)}
           />
         </section>
 
@@ -950,6 +1059,7 @@ export function App() {
         onClose={() => setIsSettingsModalOpen(false)}
         prefs={prefs}
         onOpenPinModal={handleOpenChangePin}
+        onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
         onSave={(updated) => {
           const newPrefs = SecurityStorage.savePrefs(updated);
           setPrefs(newPrefs);
@@ -957,6 +1067,14 @@ export function App() {
           setQuickRecipientEmail(newPrefs.alertRecipientEmail);
           setQuickApiKey(newPrefs.sendGridApiKey);
         }}
+      />
+
+      {/* Device Permissions Required & Active Status Modal */}
+      <DevicePermissionsModal
+        isOpen={isPermissionsModalOpen}
+        onClose={() => setIsPermissionsModalOpen(false)}
+        permissions={permissionsState}
+        onRefresh={() => PermissionManager.checkAllPermissions()}
       />
 
       {/* 4-Digit Security Password (PIN) Lock & Verification Modal */}

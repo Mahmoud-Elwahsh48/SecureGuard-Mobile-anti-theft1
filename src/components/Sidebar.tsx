@@ -16,6 +16,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { SecurityPrefsState } from '../types';
+import { AppPermissionsState } from '../utils/permissionManager';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -27,6 +28,8 @@ interface SidebarProps {
   onRefreshTelemetry: () => void;
   onOpenChangePin?: () => void;
   onLockApp?: () => void;
+  onOpenPermissions?: () => void;
+  permissions?: AppPermissionsState;
   isRefreshing: boolean;
   unauthorizedCount: number;
   totalEventsCount: number;
@@ -44,6 +47,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRefreshTelemetry,
   onOpenChangePin,
   onLockApp,
+  onOpenPermissions,
+  permissions,
   isRefreshing,
   unauthorizedCount,
   totalEventsCount,
@@ -214,7 +219,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </span>
               </button>
 
-              {/* 3. 4-Digit Security Password & PIN Security */}
+              {/* 3. Device Security Permissions */}
+              {onOpenPermissions && (
+                <button
+                  id="sidebar-device-permissions-btn"
+                  onClick={() => {
+                    onOpenPermissions();
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-800 bg-slate-950/60 text-slate-200 hover:border-slate-700 hover:bg-slate-800/60 transition active:scale-[0.98]"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <Shield className="h-4 w-4" />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs font-semibold text-white">
+                        Device Permissions
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {permissions?.allActive
+                          ? 'Camera, GPS & Alerts Active'
+                          : 'Activation Required'}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                      permissions?.allActive
+                        ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                    }`}
+                  >
+                    {permissions?.allActive ? 'ACTIVE' : 'CHECK'}
+                  </span>
+                </button>
+              )}
+
+              {/* 4. 4-Digit Security Password & PIN Security */}
               {onOpenChangePin && (
                 <button
                   id="sidebar-change-pin-btn"

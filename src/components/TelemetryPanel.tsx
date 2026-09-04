@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { DeviceTelemetryData } from '../types';
+import { DeviceTelemetry } from '../utils/telemetry';
 
 interface TelemetryPanelProps {
   telemetry: DeviceTelemetryData | null;
@@ -36,8 +37,9 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
     try {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
-          () => {
+          async (pos) => {
             setGpsStatusNotice('Real GPS location locked!');
+            await DeviceTelemetry.updateRealGpsPosition(pos.coords);
             onRefresh();
             setTimeout(() => setGpsStatusNotice(null), 4000);
           },

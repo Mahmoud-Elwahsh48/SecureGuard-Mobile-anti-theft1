@@ -251,11 +251,12 @@ export const SecurityEventsList: React.FC<SecurityEventsListProps> = ({
                           href={`https://maps.google.com/?q=${event.latitude},${event.longitude}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition"
+                          className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition max-w-[220px] truncate"
+                          title={event.locationAddress || `${event.latitude.toFixed(4)}, ${event.longitude.toFixed(4)}`}
                         >
                           <MapPin className="h-3 w-3 shrink-0" />
-                          <span>
-                            {event.latitude.toFixed(2)}, {event.longitude.toFixed(2)}
+                          <span className="truncate">
+                            {event.locationAddress || `${event.latitude.toFixed(2)}, ${event.longitude.toFixed(2)}`}
                           </span>
                         </a>
                       )}

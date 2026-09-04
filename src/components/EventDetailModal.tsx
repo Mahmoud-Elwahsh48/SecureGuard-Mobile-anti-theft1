@@ -222,6 +222,12 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   ? `Lat: ${event.latitude.toFixed(6)}, Lng: ${event.longitude.toFixed(6)}`
                   : 'Coordinates not recorded'}
               </div>
+              {event.locationAddress && (
+                <div className="mt-1.5 text-xs text-emerald-400 font-medium flex items-center space-x-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="truncate">{event.locationAddress}</span>
+                </div>
+              )}
             </div>
           </div>
 

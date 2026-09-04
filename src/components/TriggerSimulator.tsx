@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Zap,
   Power,
@@ -6,23 +6,21 @@ import {
   Plane,
   RotateCcw,
   AlertTriangle,
-  UserCheck,
-  UserX,
   Play,
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Video,
   Camera,
+  ShieldCheck,
+  Lock,
 } from 'lucide-react';
 import { SecurityPrefsState } from '../types';
+import { CameraManager, CameraPermissionStatus } from '../utils/cameraManager';
+import { AppPermissionsState, PermissionManager } from '../utils/permissionManager';
 
 interface TriggerSimulatorProps {
   prefs: SecurityPrefsState;
-  onFireTrigger: (
-    triggerName: string,
-    faceMode: 'camera' | 'owner_simulated' | 'intruder_simulated'
-  ) => Promise<void>;
+  onFireTrigger: (triggerName: string) => Promise<void>;
   isProcessing: boolean;
   lastResult: {
     eventType: string;
@@ -32,6 +30,8 @@ interface TriggerSimulatorProps {
     photoPath?: string;
     personDetected?: boolean;
   } | null;
+  permissions?: AppPermissionsState;
+  onOpenPermissions?: () => void;
 }
 
 export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
@@ -39,9 +39,26 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
   onFireTrigger,
   isProcessing,
   lastResult,
+  permissions,
+  onOpenPermissions,
 }) => {
-  const [faceMode, setFaceMode] = useState<'camera' | 'owner_simulated' | 'intruder_simulated'>('camera');
   const [selectedTrigger, setSelectedTrigger] = useState<string>('Screen On');
+  const [cameraPermission, setCameraPermission] = useState<CameraPermissionStatus>('unknown');
+  const [isRequestingPerm, setIsRequestingPerm] = useState(false);
+
+  useEffect(() => {
+    const unsub = CameraManager.subscribeStatus((status) => {
+      setCameraPermission(status);
+    });
+    CameraManager.checkPermission().then((status) => setCameraPermission(status));
+    return unsub;
+  }, []);
+
+  const handleGrantPermission = async () => {
+    setIsRequestingPerm(true);
+    await PermissionManager.requestAllPermissions();
+    setIsRequestingPerm(false);
+  };
 
   const triggers = [
     {
@@ -90,7 +107,7 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
 
   const handleExecute = (triggerName: string) => {
     setSelectedTrigger(triggerName);
-    onFireTrigger(triggerName, faceMode);
+    onFireTrigger(triggerName);
   };
 
   return (
@@ -104,51 +121,56 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
             </h2>
           </div>
           <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
-            Test stealth capture & alert dispatch on simulated hardware triggers
+            Test real camera stealth figure capture & alert dispatch on device triggers
           </p>
         </div>
 
-        {/* Face Simulation & Biometric Mode Selector */}
-        <div className="flex items-center rounded-xl bg-slate-950 p-1 border border-slate-800 w-full sm:w-auto overflow-x-auto gap-0.5">
-          <button
-            id="face-mode-camera-btn"
-            onClick={() => setFaceMode('camera')}
-            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
-              faceMode === 'camera'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Use live front camera for stealth capture"
-          >
-            <Video className="h-3.5 w-3.5 shrink-0" />
-            <span className="whitespace-nowrap">Camera</span>
-          </button>
-          <button
-            id="face-mode-owner-btn"
-            onClick={() => setFaceMode('owner_simulated')}
-            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
-              faceMode === 'owner_simulated'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Simulate Authorized Owner Face"
-          >
-            <UserCheck className="h-3.5 w-3.5 shrink-0" />
-            <span className="whitespace-nowrap">Owner</span>
-          </button>
-          <button
-            id="face-mode-intruder-btn"
-            onClick={() => setFaceMode('intruder_simulated')}
-            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
-              faceMode === 'intruder_simulated'
-                ? 'bg-rose-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Simulate Intruder / Unrecognized Face"
-          >
-            <UserX className="h-3.5 w-3.5 shrink-0" />
-            <span className="whitespace-nowrap">Intruder</span>
-          </button>
+        {/* Permission Indicator / Quick Enable */}
+        <div className="flex items-center">
+          {permissions ? (
+            permissions.allActive ? (
+              <button
+                type="button"
+                id="simulator-perms-status-btn"
+                onClick={onOpenPermissions}
+                className="flex items-center space-x-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/20 transition active:scale-95"
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span className="font-semibold">Permissions: All Active</span>
+              </button>
+            ) : (
+              <button
+                id="simulator-enable-perms-btn"
+                onClick={onOpenPermissions || handleGrantPermission}
+                disabled={isRequestingPerm}
+                className="flex items-center space-x-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-500/25 transition active:scale-95 animate-pulse"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                <span className="font-semibold">
+                  {isRequestingPerm ? 'Requesting...' : 'Permissions Required'}
+                </span>
+              </button>
+            )
+          ) : cameraPermission === 'granted' ? (
+            <div className="flex items-center space-x-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 text-xs text-emerald-400">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <Camera className="h-3.5 w-3.5" />
+              <span className="font-semibold">Camera Permission: Granted</span>
+            </div>
+          ) : (
+            <button
+              id="simulator-enable-camera-btn"
+              onClick={handleGrantPermission}
+              disabled={isRequestingPerm}
+              className="flex items-center space-x-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-500/20 transition active:scale-95"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              <span className="font-semibold">
+                {isRequestingPerm ? 'Requesting...' : 'Enable Camera Permission'}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -170,7 +192,9 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
                   : 'border-slate-800/80 bg-slate-950/60 hover:border-slate-700 hover:bg-slate-800/50'
               } disabled:cursor-not-allowed disabled:opacity-60`}
             >
-              <div className={`flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl border ${trigger.color}`}>
+              <div
+                className={`flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl border ${trigger.color}`}
+              >
                 {isThisTriggerActive ? (
                   <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
                 ) : (
@@ -199,56 +223,62 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
           <div
             className={`flex items-center justify-between rounded-xl border p-3 text-xs transition ${
               lastResult.isMatch
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
             }`}
           >
-            <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="flex items-center space-x-2.5">
               {lastResult.isMatch ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
               ) : (
-                <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 animate-bounce" />
+                <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
               )}
-              <div className="truncate">
-                <span className="font-semibold">{lastResult.eventType}: </span>
-                <span>{lastResult.message}</span>
+              <div>
+                <span className="font-bold uppercase tracking-wider block text-[11px]">
+                  {lastResult.eventType}
+                </span>
+                <span className="text-[11px] opacity-90">{lastResult.message}</span>
               </div>
             </div>
-            <span className="text-[10px] opacity-75 shrink-0 ml-2">
+
+            <span className="text-[10px] opacity-75 font-mono">
               {new Date(lastResult.timestamp).toLocaleTimeString()}
             </span>
           </div>
 
-          {/* Figure 1: Incident Capture Inspection Card */}
-          {lastResult.photoPath ? (
-            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 sm:p-3.5">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2 text-xs font-semibold text-slate-300">
-                  <Camera className="h-4 w-4 text-blue-400" />
-                  <span>Figure 1: On-Site Incident Capture</span>
-                </div>
-                {lastResult.isMatch ? (
-                  <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full font-semibold border border-emerald-500/20">
-                    Authorized Owner
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full font-semibold border border-rose-500/20">
-                    Unrecognized Subject / Intruder
-                  </span>
-                )}
-              </div>
-              <div className="relative aspect-video max-h-52 w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-900 flex items-center justify-center">
+          {/* Captured Figure Preview */}
+          {lastResult.photoPath && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center space-x-3 min-w-0">
                 <img
                   src={lastResult.photoPath}
-                  alt="Incident capture"
-                  className="h-full w-full object-contain"
+                  alt="Trigger Captured Figure"
+                  className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-lg object-cover border border-slate-700 shadow-sm"
                 />
+                <div className="min-w-0">
+                  <div className="flex items-center space-x-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                    <span className="text-xs font-bold text-white truncate">
+                      Real Device Camera Figure Captured
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {lastResult.personDetected
+                      ? 'Human subject biometric features identified'
+                      : 'Optical frame saved with forensic timestamp'}
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-2 rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 text-xs text-slate-400">
-              <Camera className="h-4 w-4 text-slate-500 shrink-0" />
-              <span>Incident alert telemetry & GPS dispatched.</span>
+
+              <span
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold border shrink-0 ${
+                  lastResult.isMatch
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                }`}
+              >
+                {lastResult.isMatch ? 'Verified Owner' : 'Unrecognized'}
+              </span>
             </div>
           )}
         </div>
@@ -256,4 +286,3 @@ export const TriggerSimulator: React.FC<TriggerSimulatorProps> = ({
     </div>
   );
 };
-
