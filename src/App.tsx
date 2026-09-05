@@ -32,6 +32,8 @@ import { CameraManager } from './utils/cameraManager';
 import { DevicePermissionsModal } from './components/DevicePermissionsModal';
 import { DevicePermissionsBanner } from './components/DevicePermissionsBanner';
 import { PermissionManager, AppPermissionsState } from './utils/permissionManager';
+import { FigureCaptureAlertModal } from './components/FigureCaptureAlertModal';
+import { DynamicTriggerService } from './utils/dynamicTriggerService';
 
 export function App() {
   const [prefs, setPrefs] = useState<SecurityPrefsState>(SecurityStorage.getPrefs());
@@ -41,6 +43,8 @@ export function App() {
   const [isProcessingTrigger, setIsProcessingTrigger] = useState(false);
   const [permissionsState, setPermissionsState] = useState<AppPermissionsState>(PermissionManager.getState());
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  const [figureAlertEvent, setFigureAlertEvent] = useState<SecurityEvent | null>(null);
+  const [isFigureModalOpen, setIsFigureModalOpen] = useState(false);
   const [lastTriggerResult, setLastTriggerResult] = useState<{
     eventType: string;
     isMatch: boolean;
@@ -426,12 +430,13 @@ export function App() {
         personDetected,
       });
 
+      // Show Captured Figure Alert Modal immediately
+      setFigureAlertEvent(newEvent);
+      setIsFigureModalOpen(true);
+
       if (prefs.soundAlert) {
         playAlertChime(!isOwner);
       }
-
-      // Finish trigger processing immediately so UI updates instantly
-      setIsProcessingTrigger(false);
 
       // 5. If Unauthorized or Telemetry Breach: Dispatch alert email & device notification in background without blocking UI
       if (!isOwner) {
@@ -455,9 +460,26 @@ export function App() {
       }
     } catch (err) {
       console.error('Trigger monitoring failed', err);
+    } finally {
       setIsProcessingTrigger(false);
     }
   };
+
+  // Wire up Dynamic Hardware Trigger Service
+  const handleFireTriggerRef = useRef<(triggerName: string) => Promise<void>>(handleFireTrigger);
+  useEffect(() => {
+    handleFireTriggerRef.current = handleFireTrigger;
+  });
+
+  useEffect(() => {
+    DynamicTriggerService.setMonitoring(prefs.isMonitoring);
+    DynamicTriggerService.setTriggerCallback(async (triggerName, details) => {
+      console.log('[SafeGuard Dynamic Trigger Activated]', triggerName, details);
+      if (handleFireTriggerRef.current) {
+        await handleFireTriggerRef.current(triggerName);
+      }
+    });
+  }, [prefs.isMonitoring]);
 
   const handleResendAlert = async (event: SecurityEvent) => {
     setIsResendingId(event.id);
@@ -942,6 +964,13 @@ export function App() {
             lastResult={lastTriggerResult}
             permissions={permissionsState}
             onOpenPermissions={() => setIsPermissionsModalOpen(true)}
+            onOpenFigureModal={() => {
+              const latest = SecurityStorage.getAllEvents()[0];
+              if (latest) {
+                setFigureAlertEvent(latest);
+                setIsFigureModalOpen(true);
+              }
+            }}
           />
         </section>
 
@@ -1095,6 +1124,21 @@ export function App() {
         }}
         onPinChanged={handlePinChanged}
         onFailedAttempt={handlePinFailedAttempt}
+      />
+
+      {/* Real-time Dynamic Figure Capture Security Modal */}
+      <FigureCaptureAlertModal
+        isOpen={isFigureModalOpen}
+        event={figureAlertEvent}
+        onClose={() => setIsFigureModalOpen(false)}
+        onLockApp={() => {
+          setIsFigureModalOpen(false);
+          handleLockApp();
+        }}
+        onViewLogs={() => {
+          setIsFigureModalOpen(false);
+          setActiveTab('logs');
+        }}
       />
     </div>
   );

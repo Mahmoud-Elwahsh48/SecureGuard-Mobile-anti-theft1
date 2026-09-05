@@ -96,13 +96,13 @@ export const CameraStealthManager: React.FC<CameraStealthManagerProps> = ({
       aria-hidden="true"
       style={{
         position: 'fixed',
-        top: '-9999px',
-        left: '-9999px',
-        width: '320px',
-        height: '240px',
-        opacity: 1,
+        bottom: '0px',
+        right: '0px',
+        width: '2px',
+        height: '2px',
+        opacity: 0.01,
         pointerEvents: 'none',
-        zIndex: -9999,
+        zIndex: -100,
       }}
     />
   );

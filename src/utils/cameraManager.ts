@@ -34,15 +34,16 @@ class CameraManagerService {
       this.hiddenVideo.defaultMuted = true;
       this.hiddenVideo.autoplay = true;
 
-      // Keep in active DOM with full opacity off-screen so Chromium and Safari maintain real-time frame decoding
+      // Keep inside physical viewport (bottom: 0, right: 0, 2px by 2px) so WebKit/Blink
+      // compositor treats it as active and continuously decodes hardware frames
       this.hiddenVideo.style.position = 'fixed';
-      this.hiddenVideo.style.top = '-9999px';
-      this.hiddenVideo.style.left = '-9999px';
-      this.hiddenVideo.style.width = '320px';
-      this.hiddenVideo.style.height = '240px';
-      this.hiddenVideo.style.opacity = '1';
+      this.hiddenVideo.style.bottom = '0px';
+      this.hiddenVideo.style.right = '0px';
+      this.hiddenVideo.style.width = '2px';
+      this.hiddenVideo.style.height = '2px';
+      this.hiddenVideo.style.opacity = '0.01';
       this.hiddenVideo.style.pointerEvents = 'none';
-      this.hiddenVideo.style.zIndex = '-9999';
+      this.hiddenVideo.style.zIndex = '-100';
 
       document.body.appendChild(this.hiddenVideo);
     }
@@ -249,19 +250,32 @@ class CameraManagerService {
   public async ensureLiveStream(): Promise<MediaStream | null> {
     const existing = this.getSharedStream();
     if (existing) {
-      if (this.hiddenVideo && this.hiddenVideo.paused) {
-        try {
-          await this.hiddenVideo.play();
-        } catch {
-          // ignore
+      if (this.hiddenVideo) {
+        if (this.hiddenVideo.srcObject !== existing) {
+          this.hiddenVideo.srcObject = existing;
+        }
+        if (this.hiddenVideo.paused) {
+          try {
+            await this.hiddenVideo.play();
+          } catch {
+            // ignore
+          }
         }
       }
       return existing;
     }
 
-    const res = await this.requestPermission();
-    if (res.granted && res.stream) {
-      return res.stream;
+    // Protect against blocking trigger execution if permission prompt is waiting
+    try {
+      const res = await Promise.race([
+        this.requestPermission(),
+        new Promise<any>((resolve) => setTimeout(() => resolve({ granted: false }), 600)),
+      ]);
+      if (res && res.granted && res.stream) {
+        return res.stream;
+      }
+    } catch {
+      // ignore
     }
     return null;
   }
