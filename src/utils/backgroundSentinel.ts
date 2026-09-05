@@ -52,15 +52,32 @@ class BackgroundSentinelService {
       this.silentAudioEl = document.createElement('audio');
       this.silentAudioEl.setAttribute('playsinline', 'true');
       this.silentAudioEl.setAttribute('webkit-playsinline', 'true');
-      this.silentAudioEl.setAttribute('muted', '');
+      // Crucial: Do NOT set 'muted' attribute because Android/iOS pause muted audio in background!
+      // Instead, use ultra-low inaudible volume so OS assigns foreground media priority.
+      this.silentAudioEl.muted = false;
       this.silentAudioEl.loop = true;
-      this.silentAudioEl.volume = 0.01;
+      this.silentAudioEl.volume = 0.001;
       this.silentAudioEl.src = SILENT_PCM_WAV;
       this.silentAudioEl.style.position = 'fixed';
       this.silentAudioEl.style.width = '1px';
       this.silentAudioEl.style.height = '1px';
-      this.silentAudioEl.style.opacity = '0.01';
+      this.silentAudioEl.style.opacity = '0.001';
       this.silentAudioEl.style.pointerEvents = 'none';
+
+      // Auto-reloop and auto-resume if OS attempts to pause
+      this.silentAudioEl.addEventListener('pause', () => {
+        if (this.isVigilant) {
+          setTimeout(() => {
+            this.silentAudioEl?.play().catch(() => {});
+          }, 200);
+        }
+      });
+      this.silentAudioEl.addEventListener('ended', () => {
+        if (this.isVigilant) {
+          this.silentAudioEl?.play().catch(() => {});
+        }
+      });
+
       document.body.appendChild(this.silentAudioEl);
     }
   }
@@ -269,6 +286,11 @@ class BackgroundSentinelService {
   }
 
   private onBackgroundTick() {
+    // Notify sensor watchdogs (e.g. battery charger detection)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('safeguard:sentinel-tick'));
+    }
+
     // Check pending intruder alert countdown
     if (this.pendingAlert) {
       this.pendingAlert.remainingSeconds -= 1;

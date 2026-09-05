@@ -407,6 +407,8 @@ class CameraManagerService {
 
     let capturedFrame = false;
 
+    const isBackground = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
     // 1. First priority: Check if sourceVideo is provided and playing
     if (sourceVideo && sourceVideo.videoWidth > 0 && sourceVideo.videoHeight > 0) {
       try {
@@ -433,10 +435,10 @@ class CameraManagerService {
       }
     }
 
-    // 2. Second priority: If not yet captured, check ImageCapture API on active video track
+    // 2. Second priority: If stream is already live, try ImageCapture API
     if (!capturedFrame) {
       try {
-        const stream = await this.ensureLiveStream();
+        const stream = isBackground ? this.getSharedStream() : await this.ensureLiveStream();
         if (stream) {
           const track = stream.getVideoTracks().find((t) => t.readyState === 'live');
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -446,24 +448,24 @@ class CameraManagerService {
               const imageCapture = new (window as any).ImageCapture(track);
               const bitmap = await Promise.race([
                 imageCapture.grabFrame(),
-                new Promise<null>((r) => setTimeout(() => r(null), 800)),
+                new Promise<null>((r) => setTimeout(() => r(null), isBackground ? 120 : 400)),
               ]);
               if (bitmap && bitmap.width > 0) {
                 ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
                 capturedFrame = true;
               }
             } catch (icErr) {
-              console.log('ImageCapture grab fallback to video element', icErr);
+              // Expected if backgrounded
             }
           }
         }
       } catch {
-        // Fallback to hidden video element
+        // Fallback
       }
     }
 
-    // 3. Third priority: Hidden video element bound to live stream
-    if (!capturedFrame) {
+    // 3. Third priority: Hidden video element (ONLY when foregrounded to prevent background hang)
+    if (!capturedFrame && !isBackground) {
       const targetVideo = this.hiddenVideo;
       if (targetVideo) {
         if (!this.sharedStream || !this.isStreamLive()) {
@@ -478,16 +480,16 @@ class CameraManagerService {
           }
         }
 
-        // Wait if video dimensions are loading (up to 800ms)
+        // Wait if video dimensions are loading (max 250ms)
         if (targetVideo.videoWidth === 0 || targetVideo.videoHeight === 0) {
           await new Promise<void>((resolve) => {
             const start = Date.now();
             const check = setInterval(() => {
-              if ((targetVideo && targetVideo.videoWidth > 0) || Date.now() - start > 800) {
+              if ((targetVideo && targetVideo.videoWidth > 0) || Date.now() - start > 250) {
                 clearInterval(check);
                 resolve();
               }
-            }, 40);
+            }, 30);
           });
         }
 

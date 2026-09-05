@@ -437,14 +437,20 @@ export function App() {
       let personDetected: boolean | undefined = undefined;
 
       try {
-        // Direct real frame capture from pre-warmed / active stream (<5ms)
-        const realCapture = await CameraManager.captureRealFigure(null, triggerName);
+        // Direct real frame capture with non-blocking timeout safeguard (<500ms)
+        const realCapture = await Promise.race([
+          CameraManager.captureRealFigure(null, triggerName),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 500)),
+        ]);
         if (realCapture && realCapture.photoDataUrl) {
           photoDataUrl = realCapture.photoDataUrl;
           candidateEmbedding = realCapture.embedding;
           personDetected = realCapture.personDetected ?? true;
         } else if (stealthCaptureRef.current) {
-          const stealthRes = await stealthCaptureRef.current(triggerName);
+          const stealthRes = await Promise.race([
+            stealthCaptureRef.current(triggerName),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 400)),
+          ]);
           if (stealthRes && stealthRes.photoDataUrl) {
             photoDataUrl = stealthRes.photoDataUrl;
             candidateEmbedding = stealthRes.embedding;
@@ -484,8 +490,11 @@ export function App() {
         message = 'Security trigger fired (Owner Face ID not yet enrolled)';
       }
 
-      // 3. Collect fast telemetry snapshot (<5ms)
-      const currentTelemetry = await DeviceTelemetry.collectFastTelemetry(telemetry);
+      // 3. Collect fast telemetry snapshot (<300ms race timeout)
+      const currentTelemetry = await Promise.race([
+        DeviceTelemetry.collectFastTelemetry(telemetry),
+        new Promise<typeof telemetry>((resolve) => setTimeout(() => resolve(telemetry), 300)),
+      ]);
       setTelemetry(currentTelemetry);
 
       // 4. Create Security Event in DB
@@ -494,16 +503,16 @@ export function App() {
         timestamp: Date.now(),
         message,
         photoPath: photoDataUrl,
-        latitude: currentTelemetry.latitude,
-        longitude: currentTelemetry.longitude,
-        altitude: currentTelemetry.altitude,
-        accuracy: currentTelemetry.accuracy,
-        locationAddress: currentTelemetry.locationAddress,
-        batteryLevel: currentTelemetry.batteryLevel,
-        networkState: currentTelemetry.networkState,
-        ipAddress: currentTelemetry.ipAddress,
+        latitude: currentTelemetry?.latitude,
+        longitude: currentTelemetry?.longitude,
+        altitude: currentTelemetry?.altitude,
+        accuracy: currentTelemetry?.accuracy,
+        locationAddress: currentTelemetry?.locationAddress,
+        batteryLevel: currentTelemetry?.batteryLevel,
+        networkState: currentTelemetry?.networkState,
+        ipAddress: currentTelemetry?.ipAddress,
         status: isOwner ? 'authorized' : 'pending',
-        deviceInfo: currentTelemetry.deviceModel,
+        deviceInfo: currentTelemetry?.deviceModel,
         personDetected: personDetected ?? (photoDataUrl ? true : null),
         figureDescription: photoDataUrl
           ? 'Real optical figure captured via device camera'
@@ -566,6 +575,11 @@ export function App() {
 
   useEffect(() => {
     DynamicTriggerService.setMonitoring(prefs.isMonitoring);
+    if (prefs.isMonitoring) {
+      BackgroundSentinel.startBackgroundVigilance();
+    } else {
+      BackgroundSentinel.stopBackgroundVigilance();
+    }
     DynamicTriggerService.setTriggerCallback(async (triggerName, details) => {
       console.log('[SafeGuard Dynamic Trigger Activated]', triggerName, details);
       if (handleFireTriggerRef.current) {

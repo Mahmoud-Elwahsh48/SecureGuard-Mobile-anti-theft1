@@ -178,14 +178,20 @@ class DynamicTriggerServiceImpl {
       }
     }
 
-    // 3. Initialize Screen On / Wake / Visibility Sensor
+    // 3. Initialize Screen On / Wake / Visibility Sensor & Power Button
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
         const currentVisibility = document.visibilityState;
         if (this.lastVisibility === 'hidden' && currentVisibility === 'visible') {
-          // Screen was woken, phone unlocked, or user returned to app
-          this.fireTrigger('Screen On', {
+          // Screen was woken, power button clicked, phone unlocked, or user returned to app
+          this.fireTrigger('Screen Woken / Screen On', {
             source: 'hardware_visibility_wake',
+            timestamp: Date.now(),
+          });
+        } else if (this.lastVisibility === 'visible' && currentVisibility === 'hidden') {
+          // Power button pressed or phone locked / switched away
+          this.fireTrigger('Power Button / Screen Locked', {
+            source: 'hardware_visibility_lock',
             timestamp: Date.now(),
           });
         }
@@ -194,17 +200,61 @@ class DynamicTriggerServiceImpl {
 
       // Window focus/blur tracking
       window.addEventListener('focus', () => {
-        if (this.lastVisibility === 'visible') {
-          this.fireTrigger('Screen On', {
-            source: 'window_focus_event',
+        this.fireTrigger('Screen Woken / App Focused', {
+          source: 'window_focus_event',
+          timestamp: Date.now(),
+        });
+      });
+
+      window.addEventListener('blur', () => {
+        if (document.visibilityState === 'hidden') {
+          this.fireTrigger('Power Button / Screen Locked', {
+            source: 'window_blur_lock',
             timestamp: Date.now(),
           });
         }
+      });
+
+      // Listen for sentinel background heartbeat ticks to verify battery state
+      window.addEventListener('safeguard:sentinel-tick', () => {
+        this.checkBatteryStatus().catch(() => {});
       });
     }
 
     // 4. Initialize Motion Sensor
     this.setupMotionSensor();
+  }
+
+  public async checkBatteryStatus() {
+    if (!this.isMonitoring) return;
+    try {
+      if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
+        if (!this.batteryObj) {
+          this.batteryObj = await (navigator as any).getBattery();
+        }
+        if (this.batteryObj) {
+          const currentCharging = this.batteryObj.charging;
+          if (this.lastCharging !== null && this.lastCharging !== currentCharging) {
+            this.lastCharging = currentCharging;
+            if (currentCharging) {
+              this.fireTrigger('Charger Connected', {
+                batteryLevel: Math.round(this.batteryObj.level * 100),
+                source: 'sentinel_tick_battery_charging',
+              });
+            } else {
+              this.fireTrigger('Charger Disconnected', {
+                batteryLevel: Math.round(this.batteryObj.level * 100),
+                source: 'sentinel_tick_battery_unplugged',
+              });
+            }
+          } else {
+            this.lastCharging = currentCharging;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 
   private setupMotionSensor() {
@@ -221,9 +271,9 @@ class DynamicTriggerServiceImpl {
       const z = acc.z || 0;
       const totalAcc = Math.sqrt(x * x + y * y + z * z);
 
-      // Earth gravity is ~9.8 m/s^2. A sudden jerk, grab, or snatch causes total acceleration to spike > 18 m/s^2
+      // Earth gravity is ~9.8 m/s^2. A sudden jerk, grab, or snatch causes total acceleration to spike > 17 m/s^2
       const now = Date.now();
-      if (totalAcc > 18.5 && now - this.lastMotionTrigger > 4000) {
+      if (totalAcc > 17.0 && now - this.lastMotionTrigger > 3500) {
         this.lastMotionTrigger = now;
         this.fireTrigger('Motion & Tamper Alert', {
           acceleration: totalAcc.toFixed(2),
@@ -235,6 +285,29 @@ class DynamicTriggerServiceImpl {
     try {
       window.addEventListener('devicemotion', handleMotion, { passive: true });
       this.motionAttached = true;
+    } catch {
+      // not supported
+    }
+
+    // Modern Generic Sensor API fallback if available (Chrome Android)
+    try {
+      const winAny = window as any;
+      if (winAny.LinearAccelerationSensor) {
+        const sensor = new winAny.LinearAccelerationSensor({ frequency: 20 });
+        sensor.addEventListener('reading', () => {
+          if (!this.isMonitoring) return;
+          const total = Math.sqrt(sensor.x * sensor.x + sensor.y * sensor.y + sensor.z * sensor.z);
+          const now = Date.now();
+          if (total > 7.5 && now - this.lastMotionTrigger > 3500) {
+            this.lastMotionTrigger = now;
+            this.fireTrigger('Motion & Tamper Alert', {
+              acceleration: total.toFixed(2),
+              source: 'linear_sensor_spike',
+            });
+          }
+        });
+        sensor.start();
+      }
     } catch {
       // not supported
     }

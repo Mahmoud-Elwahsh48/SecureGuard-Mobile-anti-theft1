@@ -11,6 +11,51 @@ export interface DispatchResult {
   rawResponse?: string;
 }
 
+async function compressImageForEmail(dataUrl: string): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith('data:image') || dataUrl.length < 25000) {
+    return dataUrl;
+  }
+  if (typeof document === 'undefined') return dataUrl;
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const maxDim = 280;
+          let w = img.width || 480;
+          let h = img.height || 360;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            const compressed = canvas.toDataURL('image/jpeg', 0.55);
+            resolve(compressed);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
+}
+
 export const AlertDispatcher = {
   buildAlertPayload(event: SecurityEvent, prefs: SecurityPrefsState, customRecipient?: string): string {
     const locationUrl =
@@ -111,7 +156,7 @@ export const AlertDispatcher = {
           'https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=600&auto=format&fit=crop&q=80';
 
         const rawImageUrl = event.photoPath && event.photoPath.trim().length > 0
-          ? event.photoPath
+          ? await compressImageForEmail(event.photoPath)
           : defaultFallbackImage;
 
         const hasRealGps = event.latitude != null && event.longitude != null;
