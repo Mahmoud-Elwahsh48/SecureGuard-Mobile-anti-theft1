@@ -1,4 +1,4 @@
-// SafeGuard Shield - Background Sentinel & Owner Protection Engine
+// SafeGuard Shield - Background Sentinel & Audio Keep-Alive Engine
 
 type OwnerStateListener = (isOwnerActive: boolean, remainingSeconds: number) => void;
 type PendingAlertListener = (info: { eventId: number; remainingSeconds: number; eventType: string } | null) => void;
@@ -11,13 +11,17 @@ interface PendingAlert {
   onExecute: () => Promise<void> | void;
 }
 
+// Inaudible continuous PCM WAV loop
+const SILENT_PCM_WAV =
+  'data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==';
+
 class BackgroundSentinelService {
   private isVigilant = false;
   private wakeLockSentinel: any = null;
   private audioContext: AudioContext | null = null;
-  private audioInterval: any = null;
+  private silentAudioEl: HTMLAudioElement | null = null;
   private worker: Worker | null = null;
-  private ownerActiveUntil: number = 0;
+  private pausedUntil: number = 0; // Explicit user pause (e.g. "Pause Alarms 10m")
   private ownerListeners: Set<OwnerStateListener> = new Set();
   private pendingAlert: PendingAlert | null = null;
   private pendingAlertListeners: Set<PendingAlertListener> = new Set();
@@ -26,11 +30,11 @@ class BackgroundSentinelService {
   constructor() {
     if (typeof window !== 'undefined') {
       this.initServiceWorker();
-      this.setupOwnerPresenceTracking();
+      this.initSilentAudioElement();
     }
   }
 
-  // Register PWA Service Worker for background sync & push notifications
+  // Register PWA Service Worker for background sync & notifications
   private async initServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
@@ -39,6 +43,25 @@ class BackgroundSentinelService {
       } catch (err) {
         console.log('[SafeGuard SW Notice]', err);
       }
+    }
+  }
+
+  private initSilentAudioElement() {
+    if (typeof document === 'undefined') return;
+    if (!this.silentAudioEl) {
+      this.silentAudioEl = document.createElement('audio');
+      this.silentAudioEl.setAttribute('playsinline', 'true');
+      this.silentAudioEl.setAttribute('webkit-playsinline', 'true');
+      this.silentAudioEl.setAttribute('muted', '');
+      this.silentAudioEl.loop = true;
+      this.silentAudioEl.volume = 0.01;
+      this.silentAudioEl.src = SILENT_PCM_WAV;
+      this.silentAudioEl.style.position = 'fixed';
+      this.silentAudioEl.style.width = '1px';
+      this.silentAudioEl.style.height = '1px';
+      this.silentAudioEl.style.opacity = '0.01';
+      this.silentAudioEl.style.pointerEvents = 'none';
+      document.body.appendChild(this.silentAudioEl);
     }
   }
 
@@ -51,13 +74,13 @@ class BackgroundSentinelService {
     // A. Request Screen / System WakeLock
     await this.acquireWakeLock();
 
-    // B. Start inaudible audio heartbeat to keep mobile OS worker threads alive in background
+    // B. Start continuous audio keep-alive to hold active mobile background execution
     this.startAudioHeartbeat();
 
-    // C. Spawn inline Web Worker ticker
+    // C. Spawn inline Web Worker ticker (immune to tab throttling)
     this.startWorkerTicker();
 
-    // D. Attach visibilitychange handler to re-acquire wake lock on resume
+    // D. Attach visibilitychange handler to re-acquire wake lock & audio on resume
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.handleVisibilityChange);
       document.addEventListener('visibilitychange', this.handleVisibilityChange);
@@ -112,50 +135,52 @@ class BackgroundSentinelService {
 
   private handleVisibilityChange = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      if (this.isVigilant && !this.wakeLockSentinel) {
-        this.acquireWakeLock();
+      if (this.isVigilant) {
+        if (!this.wakeLockSentinel) {
+          this.acquireWakeLock();
+        }
+        this.startAudioHeartbeat();
       }
     }
   };
 
-  // Inaudible audio heartbeat to keep mobile background execution active
-  private startAudioHeartbeat() {
+  // Continuous looping audio to keep mobile background execution active
+  public startAudioHeartbeat() {
     if (typeof window === 'undefined') return;
 
+    // 1. Play looping audio element
+    if (this.silentAudioEl) {
+      this.silentAudioEl.play().catch(() => {});
+    }
+
+    // 2. Setup MediaSession so Android/iOS grants foreground audio priority
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'SafeGuard Anti-Theft Guard',
+          artist: 'Armed & Vigilant',
+          album: 'Intruder Detection Active',
+        });
+        navigator.mediaSession.playbackState = 'playing';
+
+        navigator.mediaSession.setActionHandler('play', () => {
+          this.silentAudioEl?.play().catch(() => {});
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    // 3. Web Audio API continuous buffer
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-
-      if (!this.audioContext || this.audioContext.state === 'closed') {
-        this.audioContext = new AudioCtx();
-      }
-
-      // Unlock on mobile user gesture
-      if (this.audioContext.state === 'suspended') {
-        this.audioContext.resume().catch(() => {});
-      }
-
-      // Inaudible 10Hz buffer oscillator every 15s to keep background alive
-      if (!this.audioInterval) {
-        this.audioInterval = setInterval(() => {
-          if (!this.audioContext || this.audioContext.state === 'closed') return;
-          try {
-            if (this.audioContext.state === 'suspended') {
-              this.audioContext.resume().catch(() => {});
-            }
-            // Tiny 1-sample silent node
-            const osc = this.audioContext.createOscillator();
-            const gain = this.audioContext.createGain();
-            gain.gain.value = 0.00001; // Silent / Inaudible
-            osc.frequency.value = 20;
-            osc.connect(gain);
-            gain.connect(this.audioContext.destination);
-            osc.start();
-            osc.stop(this.audioContext.currentTime + 0.05);
-          } catch {
-            // ignore
-          }
-        }, 15000);
+      if (AudioCtx) {
+        if (!this.audioContext || this.audioContext.state === 'closed') {
+          this.audioContext = new AudioCtx();
+        }
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(() => {});
+        }
       }
     } catch (e) {
       console.log('[SafeGuard Audio KeepAlive Notice]', e);
@@ -163,9 +188,19 @@ class BackgroundSentinelService {
   }
 
   private stopAudioHeartbeat() {
-    if (this.audioInterval) {
-      clearInterval(this.audioInterval);
-      this.audioInterval = null;
+    if (this.silentAudioEl) {
+      try {
+        this.silentAudioEl.pause();
+      } catch {
+        // ignore
+      }
+    }
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.playbackState = 'none';
+      } catch {
+        // ignore
+      }
     }
     if (this.audioContext && this.audioContext.state !== 'closed') {
       try {
@@ -179,22 +214,22 @@ class BackgroundSentinelService {
 
   // Background Web Worker Ticker (immune to tab throttling)
   private startWorkerTicker() {
-    if (typeof window === 'undefined' || typeof Worker === 'undefined' || this.worker) return;
+    if (this.worker || typeof window === 'undefined') return;
 
     try {
       const workerCode = `
-        let interval = null;
+        let timer = null;
         self.onmessage = function(e) {
           if (e.data === 'start') {
-            if (!interval) {
-              interval = setInterval(function() {
+            if (!timer) {
+              timer = setInterval(function() {
                 self.postMessage('tick');
               }, 1000);
             }
           } else if (e.data === 'stop') {
-            if (interval) {
-              clearInterval(interval);
-              interval = null;
+            if (timer) {
+              clearInterval(timer);
+              timer = null;
             }
           }
         };
@@ -255,44 +290,34 @@ class BackgroundSentinelService {
     this.notifyOwnerState();
   }
 
-  // --- 2. OWNER IN-USE & MOBILE USAGE PROTECTION ---
+  // --- 2. OWNER TEMPORARY PAUSE (MANUAL EXPLICIT PAUSE ONLY) ---
 
-  private setupOwnerPresenceTracking() {
-    // Interacting with the device resets/extends owner session if already active
-    const handleOwnerInteraction = () => {
-      if (this.isOwnerActive()) {
-        // Extend session by 2 minutes on user interaction
-        this.ownerActiveUntil = Math.max(this.ownerActiveUntil, Date.now() + 2 * 60 * 1000);
-      }
-    };
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('touchstart', handleOwnerInteraction, { passive: true });
-      window.addEventListener('mousedown', handleOwnerInteraction, { passive: true });
-      window.addEventListener('keydown', handleOwnerInteraction, { passive: true });
-    }
-  }
-
-  public setOwnerActive(durationMinutes: number = 10) {
-    this.ownerActiveUntil = Date.now() + durationMinutes * 60 * 1000;
+  public pauseMonitoring(durationMinutes: number = 10) {
+    this.pausedUntil = Date.now() + durationMinutes * 60 * 1000;
     this.notifyOwnerState();
-
-    // If an alert was counting down, cancel it immediately because owner is present!
     this.cancelPendingIntruderAlert();
   }
 
-  public clearOwnerSession() {
-    this.ownerActiveUntil = 0;
+  public resumeMonitoring() {
+    this.pausedUntil = 0;
     this.notifyOwnerState();
   }
 
+  public setOwnerActive(durationMinutes: number = 10) {
+    this.pauseMonitoring(durationMinutes);
+  }
+
+  public clearOwnerSession() {
+    this.resumeMonitoring();
+  }
+
   public isOwnerActive(): boolean {
-    return Date.now() < this.ownerActiveUntil;
+    return Date.now() < this.pausedUntil;
   }
 
   public getRemainingOwnerSeconds(): number {
     if (!this.isOwnerActive()) return 0;
-    return Math.max(0, Math.round((this.ownerActiveUntil - Date.now()) / 1000));
+    return Math.max(0, Math.round((this.pausedUntil - Date.now()) / 1000));
   }
 
   public subscribeOwnerState(listener: OwnerStateListener): () => void {
@@ -313,30 +338,19 @@ class BackgroundSentinelService {
     });
   }
 
-  // --- 3. INTRUDER ALERT GRACE COUNTDOWN MANAGEMENT ---
+  // --- 3. INTRUDER ALERT DISPATCH & GRACE COUNTDOWN ---
 
-  /**
-   * Schedules an alert email with a countdown.
-   * If the owner is using the device and enters their PIN or confirms presence,
-   * cancelPendingIntruderAlert() immediately halts the email dispatch.
-   */
   public scheduleIntruderEmail(
     eventId: number,
     eventType: string,
     countdownSeconds: number,
     onExecute: () => Promise<void> | void
   ): () => void {
-    // If owner is active right now, do NOT schedule intruder email!
-    if (this.isOwnerActive()) {
-      console.log('[SafeGuard Owner In-Use: Suppressing Intruder Email]');
-      return () => {};
-    }
-
     // Cancel any previous pending alert
     this.cancelPendingIntruderAlert();
 
     if (countdownSeconds <= 0) {
-      // Immediate execution
+      // Immediate execution without delay
       try {
         onExecute();
       } catch (err) {

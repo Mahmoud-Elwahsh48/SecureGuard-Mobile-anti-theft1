@@ -36,6 +36,7 @@ import { FigureCaptureAlertModal } from './components/FigureCaptureAlertModal';
 import { DynamicTriggerService } from './utils/dynamicTriggerService';
 import { BackgroundSentinel } from './utils/backgroundSentinel';
 import { OwnerInUseBanner } from './components/OwnerInUseBanner';
+import { StealthLockModal } from './components/StealthLockModal';
 
 export function App() {
   const [prefs, setPrefs] = useState<SecurityPrefsState>(SecurityStorage.getPrefs());
@@ -45,6 +46,7 @@ export function App() {
   const [isProcessingTrigger, setIsProcessingTrigger] = useState(false);
   const [permissionsState, setPermissionsState] = useState<AppPermissionsState>(PermissionManager.getState());
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  const [isStealthLockOpen, setIsStealthLockOpen] = useState(false);
   const [figureAlertEvent, setFigureAlertEvent] = useState<SecurityEvent | null>(null);
   const [isFigureModalOpen, setIsFigureModalOpen] = useState(false);
   const [isOwnerActive, setIsOwnerActive] = useState(BackgroundSentinel.isOwnerActive());
@@ -273,7 +275,6 @@ export function App() {
       description: 'Enter 4-digit security password to access application',
       canCancel: false,
       onSuccess: () => {
-        BackgroundSentinel.setOwnerActive(prefs.ownerSessionGraceMinutes || 10);
         setPinModalConfig((prev) => ({ ...prev, isOpen: false }));
       },
     });
@@ -413,38 +414,10 @@ export function App() {
       return;
     }
 
-    // 0. OWNER IN-USE BYPASS LOGIC:
-    // When owner is using their mobile, do NOT capture owner or dispatch intruder alerts!
-    const ownerCurrentlyActive = BackgroundSentinel.isOwnerActive();
-    const appUnlockedInForeground =
-      !pinModalConfig.isOpen && typeof document !== 'undefined' && document.visibilityState === 'visible';
-
-    if (prefs.ownerInUseBypass && (ownerCurrentlyActive || (prefs.pauseTriggersWhenUnlocked && appUnlockedInForeground))) {
-      if (appUnlockedInForeground && !ownerCurrentlyActive) {
-        // Automatically sustain owner presence while using the unlocked app
-        BackgroundSentinel.setOwnerActive(prefs.ownerSessionGraceMinutes || 10);
-      }
-
-      console.log(`[SafeGuard] Owner active on mobile. Suppressing intruder capture/email for: ${triggerName}`);
-      SecurityStorage.insertEvent({
-        eventType: `${triggerName} (Owner Active)`,
-        timestamp: Date.now(),
-        message: 'Owner mobile in-use - Intruder alerts bypassed',
-        status: 'authorized',
-        batteryLevel: telemetry?.batteryLevel,
-        networkState: telemetry?.networkState,
-        ipAddress: telemetry?.ipAddress,
-        deviceInfo: telemetry?.deviceModel,
-        figureDescription: 'Owner mobile usage bypass active',
-      });
-
-      setEvents(SecurityStorage.getAllEvents());
-      setLastTriggerResult({
-        eventType: `${triggerName} (Owner Active)`,
-        isMatch: true,
-        message: 'Owner using mobile - Intruder alert bypassed',
-        timestamp: Date.now(),
-      });
+    // 0. OWNER EXPLICIT PAUSE CHECK
+    // Only pause if owner explicitly pressed "Pause (10m)" in the UI
+    if (BackgroundSentinel.isOwnerActive()) {
+      console.log(`[SafeGuard] Monitoring explicitly paused by owner. Skipping: ${triggerName}`);
       return;
     }
 
@@ -563,43 +536,20 @@ export function App() {
           `Unauthorized figure captured during ${triggerName}. Alert email dispatching.`
         );
 
-        const countdown = prefs.intruderCountdownSeconds ?? 8;
-        if (countdown > 0) {
-          // Schedule cancelable dispatch with grace countdown window
-          BackgroundSentinel.scheduleIntruderEmail(
-            newEvent.id,
-            triggerName,
-            countdown,
-            async () => {
-              console.log('[SafeGuard] Countdown finished. Dispatching intruder alert email...');
-              try {
-                const dispatchResult = await AlertDispatcher.dispatchAlert(newEvent, prefs);
-                if (dispatchResult.success) {
-                  SecurityStorage.updateEventStatus(newEvent.id, 'sent');
-                } else {
-                  SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
-                }
-                setEvents(SecurityStorage.getAllEvents());
-              } catch (dispatchErr) {
-                console.warn('Alert dispatch error:', dispatchErr);
-              }
+        // Immediate dispatch to send intruder email before OS can suspend network or process
+        AlertDispatcher.dispatchAlert(newEvent, prefs)
+          .then((dispatchResult) => {
+            console.log('[SafeGuard Alert Dispatched]', dispatchResult);
+            if (dispatchResult.success) {
+              SecurityStorage.updateEventStatus(newEvent.id, 'sent');
+            } else {
+              SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
             }
-          );
-        } else {
-          // Immediate dispatch
-          AlertDispatcher.dispatchAlert(newEvent, prefs)
-            .then((dispatchResult) => {
-              if (dispatchResult.success) {
-                SecurityStorage.updateEventStatus(newEvent.id, 'sent');
-              } else {
-                SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
-              }
-              setEvents(SecurityStorage.getAllEvents());
-            })
-            .catch((dispatchErr) => {
-              console.warn('Background alert dispatch notice:', dispatchErr);
-            });
-        }
+            setEvents(SecurityStorage.getAllEvents());
+          })
+          .catch((dispatchErr) => {
+            console.warn('Background alert dispatch notice:', dispatchErr);
+          });
       }
     } catch (err) {
       console.error('Trigger monitoring failed', err);
@@ -622,6 +572,26 @@ export function App() {
         await handleFireTriggerRef.current(triggerName);
       }
     });
+  }, [prefs.isMonitoring]);
+
+  // Flush any queued offline intruder emails whenever network connectivity returns
+  useEffect(() => {
+    const handleOnline = () => {
+      AlertDispatcher.flushOfflineQueue(prefs);
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [prefs]);
+
+  // Ensure audio keep-alive context is unlocked on first user touch/interaction
+  useEffect(() => {
+    const handleFirstGesture = () => {
+      if (prefs.isMonitoring) {
+        BackgroundSentinel.startBackgroundVigilance();
+      }
+    };
+    window.addEventListener('click', handleFirstGesture, { once: true });
+    window.addEventListener('touchstart', handleFirstGesture, { once: true });
   }, [prefs.isMonitoring]);
 
   const handleResendAlert = async (event: SecurityEvent) => {
@@ -831,6 +801,7 @@ export function App() {
           pendingAlert={pendingAlert}
           onCancelPendingAlert={handleCancelPendingAlert}
           onOpenFaceModal={() => setIsFaceModalOpen(true)}
+          onOpenStealthLock={() => setIsStealthLockOpen(true)}
         />
 
         {/* Device Permissions Required & Active Status Banner */}
@@ -1294,6 +1265,14 @@ export function App() {
           setIsFigureModalOpen(false);
           setActiveTab('logs');
         }}
+      />
+
+      {/* Stealth Lock Screen (Simulated Screen Off & Trap for Mobile) */}
+      <StealthLockModal
+        isOpen={isStealthLockOpen}
+        onClose={() => setIsStealthLockOpen(false)}
+        onTriggerBreach={(reason) => handleFireTrigger(reason)}
+        prefs={prefs}
       />
     </div>
   );

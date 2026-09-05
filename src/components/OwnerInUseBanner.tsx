@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Lock,
   UserCheck,
+  Moon,
 } from 'lucide-react';
 import { SecurityPrefsState } from '../types';
 
@@ -19,6 +20,7 @@ interface OwnerInUseBannerProps {
   pendingAlert: { eventId: number; remainingSeconds: number; eventType: string } | null;
   onCancelPendingAlert: () => void;
   onOpenFaceModal: () => void;
+  onOpenStealthLock?: () => void;
 }
 
 export const OwnerInUseBanner: React.FC<OwnerInUseBannerProps> = ({
@@ -30,6 +32,7 @@ export const OwnerInUseBanner: React.FC<OwnerInUseBannerProps> = ({
   pendingAlert,
   onCancelPendingAlert,
   onOpenFaceModal,
+  onOpenStealthLock,
 }) => {
   const [showFacePrompt, setShowFacePrompt] = useState(!prefs.ownerFaceEmbedding);
 
@@ -86,28 +89,28 @@ export const OwnerInUseBanner: React.FC<OwnerInUseBannerProps> = ({
 
   return (
     <div className="space-y-2">
-      {/* 2. Owner Presence / In-Use Status Ribbon */}
+      {/* 2. Sentinel Vigilance & Owner Status Ribbon */}
       <div
         id="owner-presence-ribbon"
         className={`rounded-2xl border p-3 sm:p-3.5 transition backdrop-blur-md ${
           isOwnerActive
-            ? 'border-emerald-500/40 bg-emerald-950/40 shadow-emerald-950/20 shadow-md'
-            : 'border-slate-800 bg-slate-900/60'
+            ? 'border-amber-500/40 bg-amber-950/40 shadow-amber-950/20 shadow-md'
+            : 'border-emerald-500/30 bg-slate-900/80 shadow-emerald-950/10 shadow-lg'
         }`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center space-x-3 min-w-0">
             <div
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                 isOwnerActive
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 ring-2 ring-emerald-500/10'
-                  : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 ring-2 ring-amber-500/10'
+                  : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 ring-2 ring-emerald-500/10'
               }`}
             >
               {isOwnerActive ? (
-                <Smartphone className="h-4 w-4" />
+                <Smartphone className="h-5 w-5" />
               ) : (
-                <Shield className="h-4 w-4" />
+                <Shield className="h-5 w-5 animate-pulse" />
               )}
             </div>
 
@@ -115,80 +118,92 @@ export const OwnerInUseBanner: React.FC<OwnerInUseBannerProps> = ({
               <div className="flex items-center space-x-2 flex-wrap">
                 <span
                   className={`text-xs sm:text-sm font-bold truncate ${
-                    isOwnerActive ? 'text-emerald-300' : 'text-slate-200'
+                    isOwnerActive ? 'text-amber-300' : 'text-emerald-300'
                   }`}
                 >
                   {isOwnerActive
-                    ? 'Owner Active on Mobile (Safe Mode)'
-                    : 'Armed for Intruder (Background Sentinel Active)'}
+                    ? 'Monitoring Temporarily Paused'
+                    : 'Armed & Vigilant in Background'}
                 </span>
 
                 {isOwnerActive ? (
-                  <span className="inline-flex items-center space-x-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/30">
+                  <span className="inline-flex items-center space-x-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-300 border border-amber-500/30">
                     <Clock className="h-3 w-3" />
                     <span>{formatTime(remainingOwnerSeconds)} left</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center space-x-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-300 border border-blue-500/20">
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
-                    <span>Vigilant</span>
+                  <span className="inline-flex items-center space-x-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/40">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping mr-1" />
+                    <span>Keep-Alive Active</span>
                   </span>
                 )}
               </div>
 
               <p className="mt-0.5 text-[11px] sm:text-xs text-slate-400">
                 {isOwnerActive
-                  ? 'Personal mobile usage safe. Hardware triggers & camera captures will not trigger false intruder emails.'
-                  : `Running in background. Any unauthorized trigger will capture the intruder and dispatch alert to ${
+                  ? 'You paused alerts to use your mobile. Monitoring auto-resumes when timer expires.'
+                  : `Active in background. Any unauthorized trigger (charger unplug, screen on, motion) immediately emails ${
                       prefs.alertRecipientEmail || prefs.ownerEmail
                     }.`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+          <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center flex-wrap gap-y-1">
+            {onOpenStealthLock && !isOwnerActive && (
+              <button
+                id="btn-stealth-lock-screen"
+                onClick={onOpenStealthLock}
+                title="Enter Stealth Lock Screen (Simulated Screen Off for Mobile)"
+                className="flex items-center space-x-1.5 rounded-xl border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800 transition active:scale-95 shadow-sm"
+              >
+                <Moon className="h-3.5 w-3.5 text-indigo-400" />
+                <span>Stealth Lock</span>
+              </button>
+            )}
+
             {isOwnerActive ? (
               <button
-                id="btn-arm-intruder-mode"
+                id="btn-resume-arm-mode"
                 onClick={onLockOwnerMode}
-                title="Lock and switch to background intruder detection"
-                className="flex items-center space-x-1.5 rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-blue-500/40 hover:bg-slate-750 transition active:scale-95"
+                title="Resume full armed monitoring immediately"
+                className="flex items-center space-x-1.5 rounded-xl border border-emerald-500/50 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/30 transition active:scale-95 shadow-sm"
               >
-                <Lock className="h-3.5 w-3.5 text-blue-400" />
-                <span>Arm for Intruder</span>
+                <Lock className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Arm Now</span>
               </button>
             ) : (
               <button
-                id="btn-activate-owner-mode"
+                id="btn-pause-owner-mode"
                 onClick={onActivateOwnerMode}
-                title="Tell SafeGuard you are using your phone to avoid false alarms"
-                className="flex items-center space-x-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25 transition active:scale-95"
+                title="Pause alarms for 10 minutes while using phone"
+                className="flex items-center space-x-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-750 transition active:scale-95"
               >
-                <Smartphone className="h-3.5 w-3.5 text-emerald-400" />
-                <span>I'm Using My Phone</span>
+                <Clock className="h-3.5 w-3.5 text-amber-400" />
+                <span>Pause (10m)</span>
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* 3. Owner Face ID Enrollment Reminder (Prompts owner to enroll once so camera automatically recognizes them) */}
+      {/* 3. Owner Face ID Enrollment Reminder */}
       {!prefs.ownerFaceEmbedding && showFacePrompt && (
         <div
           id="owner-face-enrollment-prompt"
-          className="rounded-2xl border border-amber-500/30 bg-amber-950/20 p-3 flex items-center justify-between gap-3 text-xs"
+          className="rounded-2xl border border-blue-500/30 bg-blue-950/20 p-3 flex items-center justify-between gap-3 text-xs"
         >
           <div className="flex items-center space-x-2.5 min-w-0">
-            <UserCheck className="h-4 w-4 text-amber-400 shrink-0" />
-            <p className="text-amber-200 truncate">
-              <span className="font-bold">Tip: Enroll Owner Face ID</span> so the camera automatically recognizes you and skips intruder alerts.
+            <UserCheck className="h-4 w-4 text-blue-400 shrink-0" />
+            <p className="text-blue-200 truncate">
+              <span className="font-bold">Enroll Owner Face ID:</span> Camera will automatically verify your face and dismiss alarms.
             </p>
           </div>
           <div className="flex items-center space-x-1.5 shrink-0">
             <button
               id="btn-prompt-enroll-face"
               onClick={onOpenFaceModal}
-              className="rounded-lg bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 font-bold text-amber-300 hover:bg-amber-500/30 transition text-[11px]"
+              className="rounded-lg bg-blue-500/20 border border-blue-500/30 px-2.5 py-1 font-bold text-blue-300 hover:bg-blue-500/30 transition text-[11px]"
             >
               Enroll Face
             </button>

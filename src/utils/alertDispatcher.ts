@@ -223,10 +223,12 @@ export const AlertDispatcher = {
         }
       } catch (err: any) {
         console.warn('EmailJS network exception:', err);
+        // Queue alert for automatic dispatch upon reconnection
+        this.enqueueOfflineAlert(event, prefs, recipient);
         return {
           success: false,
           method: 'EmailJS Network Client',
-          message: `Network failure connecting to EmailJS API: ${err?.message || 'Check internet connection'}.`,
+          message: `Network offline: Alert queued. Will automatically dispatch when connection returns.`,
           timestamp: Date.now(),
           recipient,
         };
@@ -241,6 +243,43 @@ export const AlertDispatcher = {
       timestamp: Date.now(),
       recipient,
     };
+  },
+
+  enqueueOfflineAlert(event: SecurityEvent, _prefs: SecurityPrefsState, recipient: string) {
+    try {
+      const queueKey = 'safeguard_offline_email_queue';
+      const existing = JSON.parse(localStorage.getItem(queueKey) || '[]');
+      // Avoid duplicates
+      if (!existing.some((item: any) => item.event.id === event.id)) {
+        existing.push({ event, recipient, timestamp: Date.now() });
+        localStorage.setItem(queueKey, JSON.stringify(existing.slice(-20)));
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  async flushOfflineQueue(prefs: SecurityPrefsState) {
+    try {
+      const queueKey = 'safeguard_offline_email_queue';
+      const stored = localStorage.getItem(queueKey);
+      if (!stored) return;
+      const items = JSON.parse(stored);
+      if (!Array.isArray(items) || items.length === 0) return;
+
+      console.log(`[SafeGuard] Connection restored. Flushing ${items.length} queued alert emails...`);
+      localStorage.removeItem(queueKey);
+
+      for (const item of items) {
+        try {
+          await this.dispatchAlert(item.event, prefs, item.recipient);
+        } catch (e) {
+          console.error('Failed to flush queued alert email:', e);
+        }
+      }
+    } catch {
+      // ignore
+    }
   },
 
   /**

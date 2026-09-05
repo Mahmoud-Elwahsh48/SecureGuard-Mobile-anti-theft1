@@ -19,10 +19,10 @@ const DEFAULT_PREFS: SecurityPrefsState = {
   securityPin: '1234',
   requirePinToDisarm: true,
   runInBackground: true,
-  ownerInUseBypass: true,
+  ownerInUseBypass: false,
   ownerSessionGraceMinutes: 10,
-  intruderCountdownSeconds: 8,
-  pauseTriggersWhenUnlocked: true,
+  intruderCountdownSeconds: 0,
+  pauseTriggersWhenUnlocked: false,
 };
 
 const INITIAL_SAMPLE_EVENTS: SecurityEvent[] = [
@@ -65,6 +65,11 @@ export const SecurityStorage = {
       return {
         ...DEFAULT_PREFS,
         ...parsed,
+        ownerEmail: parsed.ownerEmail || DEFAULT_PREFS.ownerEmail,
+        alertRecipientEmail: parsed.alertRecipientEmail || DEFAULT_PREFS.alertRecipientEmail,
+        // Ensure auto-bypass is disabled by default so triggers always capture and send
+        ownerInUseBypass: parsed.ownerInUseBypass === true ? false : false,
+        pauseTriggersWhenUnlocked: parsed.pauseTriggersWhenUnlocked === true ? false : false,
         emailJsServiceId:
           parsed.emailJsServiceId === 'service_pegyggo' || !parsed.emailJsServiceId
             ? DEFAULT_PREFS.emailJsServiceId
