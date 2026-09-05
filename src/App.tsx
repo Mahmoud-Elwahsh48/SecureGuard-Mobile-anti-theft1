@@ -34,6 +34,8 @@ import { DevicePermissionsBanner } from './components/DevicePermissionsBanner';
 import { PermissionManager, AppPermissionsState } from './utils/permissionManager';
 import { FigureCaptureAlertModal } from './components/FigureCaptureAlertModal';
 import { DynamicTriggerService } from './utils/dynamicTriggerService';
+import { BackgroundSentinel } from './utils/backgroundSentinel';
+import { OwnerInUseBanner } from './components/OwnerInUseBanner';
 
 export function App() {
   const [prefs, setPrefs] = useState<SecurityPrefsState>(SecurityStorage.getPrefs());
@@ -45,6 +47,9 @@ export function App() {
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [figureAlertEvent, setFigureAlertEvent] = useState<SecurityEvent | null>(null);
   const [isFigureModalOpen, setIsFigureModalOpen] = useState(false);
+  const [isOwnerActive, setIsOwnerActive] = useState(BackgroundSentinel.isOwnerActive());
+  const [remainingOwnerSeconds, setRemainingOwnerSeconds] = useState(BackgroundSentinel.getRemainingOwnerSeconds());
+  const [pendingAlert, setPendingAlert] = useState<{ eventId: number; remainingSeconds: number; eventType: string } | null>(null);
   const [lastTriggerResult, setLastTriggerResult] = useState<{
     eventType: string;
     isMatch: boolean;
@@ -136,6 +141,30 @@ export function App() {
     };
   }, [refreshTelemetry]);
 
+  // Keep Background Sentinel vigilance synced with monitoring & settings
+  useEffect(() => {
+    if (prefs.isMonitoring && (prefs.runInBackground ?? true)) {
+      BackgroundSentinel.startBackgroundVigilance();
+    } else {
+      BackgroundSentinel.stopBackgroundVigilance();
+    }
+  }, [prefs.isMonitoring, prefs.runInBackground]);
+
+  // Subscribe to Owner Active State & Pending Intruder Countdown
+  useEffect(() => {
+    const unsubOwner = BackgroundSentinel.subscribeOwnerState((active, remaining) => {
+      setIsOwnerActive(active);
+      setRemainingOwnerSeconds(remaining);
+    });
+    const unsubAlert = BackgroundSentinel.subscribePendingAlert((info) => {
+      setPendingAlert(info);
+    });
+    return () => {
+      unsubOwner();
+      unsubAlert();
+    };
+  }, []);
+
   // Proactively check all permissions and require them when running on device
   useEffect(() => {
     const unsub = PermissionManager.subscribe((st) => {
@@ -185,6 +214,13 @@ export function App() {
     body: string;
   } | null>(null);
 
+  const triggerHudNotification = (title: string, body: string) => {
+    setHudNotification({ title, body });
+    setTimeout(() => {
+      setHudNotification((cur) => (cur?.title === title ? null : cur));
+    }, 4500);
+  };
+
   useEffect(() => {
     const handleNotification = (e: Event) => {
       const customEvent = e as CustomEvent<{ title: string; body: string }>;
@@ -229,6 +265,7 @@ export function App() {
   };
 
   const handleLockApp = () => {
+    BackgroundSentinel.clearOwnerSession();
     setPinModalConfig({
       isOpen: true,
       mode: 'unlock_app',
@@ -236,9 +273,49 @@ export function App() {
       description: 'Enter 4-digit security password to access application',
       canCancel: false,
       onSuccess: () => {
+        BackgroundSentinel.setOwnerActive(prefs.ownerSessionGraceMinutes || 10);
         setPinModalConfig((prev) => ({ ...prev, isOpen: false }));
       },
     });
+  };
+
+  // Owner In-Use Actions
+  const handleActivateOwnerMode = () => {
+    setPinModalConfig({
+      isOpen: true,
+      mode: 'verify_action',
+      title: 'Confirm Owner Presence',
+      description: 'Enter 4-digit security password to activate Owner Safe Mode',
+      canCancel: true,
+      onSuccess: () => {
+        BackgroundSentinel.setOwnerActive(prefs.ownerSessionGraceMinutes || 10);
+        setPinModalConfig((prev) => ({ ...prev, isOpen: false }));
+        triggerHudNotification(
+          'Owner Safe Mode Activated',
+          `Intruder alerts paused for ${prefs.ownerSessionGraceMinutes || 10}m while using your mobile.`
+        );
+      },
+    });
+  };
+
+  const handleLockOwnerMode = () => {
+    BackgroundSentinel.clearOwnerSession();
+    triggerHudNotification(
+      'Background Vigilance Armed',
+      'Device armed for intruder detection. Hardware triggers will capture unauthorized figures.'
+    );
+  };
+
+  const handleCancelPendingAlert = () => {
+    const cancelled = BackgroundSentinel.cancelPendingIntruderAlert();
+    if (cancelled) {
+      BackgroundSentinel.setOwnerActive(prefs.ownerSessionGraceMinutes || 10);
+      setIsFigureModalOpen(false);
+      triggerHudNotification(
+        'Intruder Alert Cancelled',
+        'Owner presence confirmed. Email alert dispatch stopped.'
+      );
+    }
   };
 
   const handleOpenChangePin = () => {
@@ -332,7 +409,46 @@ export function App() {
 
   // Execute Security Monitoring Trigger
   const handleFireTrigger = async (triggerName: string) => {
-    // If security monitoring is disarmed, automatically arm it for this trigger test
+    if (isProcessingTrigger) {
+      return;
+    }
+
+    // 0. OWNER IN-USE BYPASS LOGIC:
+    // When owner is using their mobile, do NOT capture owner or dispatch intruder alerts!
+    const ownerCurrentlyActive = BackgroundSentinel.isOwnerActive();
+    const appUnlockedInForeground =
+      !pinModalConfig.isOpen && typeof document !== 'undefined' && document.visibilityState === 'visible';
+
+    if (prefs.ownerInUseBypass && (ownerCurrentlyActive || (prefs.pauseTriggersWhenUnlocked && appUnlockedInForeground))) {
+      if (appUnlockedInForeground && !ownerCurrentlyActive) {
+        // Automatically sustain owner presence while using the unlocked app
+        BackgroundSentinel.setOwnerActive(prefs.ownerSessionGraceMinutes || 10);
+      }
+
+      console.log(`[SafeGuard] Owner active on mobile. Suppressing intruder capture/email for: ${triggerName}`);
+      SecurityStorage.insertEvent({
+        eventType: `${triggerName} (Owner Active)`,
+        timestamp: Date.now(),
+        message: 'Owner mobile in-use - Intruder alerts bypassed',
+        status: 'authorized',
+        batteryLevel: telemetry?.batteryLevel,
+        networkState: telemetry?.networkState,
+        ipAddress: telemetry?.ipAddress,
+        deviceInfo: telemetry?.deviceModel,
+        figureDescription: 'Owner mobile usage bypass active',
+      });
+
+      setEvents(SecurityStorage.getAllEvents());
+      setLastTriggerResult({
+        eventType: `${triggerName} (Owner Active)`,
+        isMatch: true,
+        message: 'Owner using mobile - Intruder alert bypassed',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // If security monitoring is disarmed, automatically arm it for this trigger
     if (!prefs.isMonitoring) {
       const updatedPrefs = { ...prefs, isMonitoring: true };
       setPrefs(updatedPrefs);
@@ -385,6 +501,8 @@ export function App() {
       if (isOwner) {
         finalEventType = triggerName;
         message = 'Security trigger fired - Authorized owner face verified';
+        // Owner recognized: activate owner safe mode!
+        BackgroundSentinel.setOwnerActive(prefs.ownerSessionGraceMinutes || 10);
       } else if (prefs.ownerFaceEmbedding) {
         finalEventType = `${triggerName} - Unrecognized Subject`;
         message = 'Unauthorized subject detected by camera';
@@ -438,25 +556,50 @@ export function App() {
         playAlertChime(!isOwner);
       }
 
-      // 5. If Unauthorized or Telemetry Breach: Dispatch alert email & device notification in background without blocking UI
+      // 5. If Unauthorized or Telemetry Breach: Dispatch alert email to configured address
       if (!isOwner) {
         PermissionManager.notifyUser(
-          'Security Breach Detected - SafeGuard Shield',
-          `Unauthorized figure captured during ${triggerName}. Alert email dispatched.`
+          '🚨 Security Breach Detected - SafeGuard Shield',
+          `Unauthorized figure captured during ${triggerName}. Alert email dispatching.`
         );
 
-        AlertDispatcher.dispatchAlert(newEvent, prefs)
-          .then((dispatchResult) => {
-            if (dispatchResult.success) {
-              SecurityStorage.updateEventStatus(newEvent.id, 'sent');
-            } else {
-              SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
+        const countdown = prefs.intruderCountdownSeconds ?? 8;
+        if (countdown > 0) {
+          // Schedule cancelable dispatch with grace countdown window
+          BackgroundSentinel.scheduleIntruderEmail(
+            newEvent.id,
+            triggerName,
+            countdown,
+            async () => {
+              console.log('[SafeGuard] Countdown finished. Dispatching intruder alert email...');
+              try {
+                const dispatchResult = await AlertDispatcher.dispatchAlert(newEvent, prefs);
+                if (dispatchResult.success) {
+                  SecurityStorage.updateEventStatus(newEvent.id, 'sent');
+                } else {
+                  SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
+                }
+                setEvents(SecurityStorage.getAllEvents());
+              } catch (dispatchErr) {
+                console.warn('Alert dispatch error:', dispatchErr);
+              }
             }
-            setEvents(SecurityStorage.getAllEvents());
-          })
-          .catch((dispatchErr) => {
-            console.warn('Background alert dispatch notice:', dispatchErr);
-          });
+          );
+        } else {
+          // Immediate dispatch
+          AlertDispatcher.dispatchAlert(newEvent, prefs)
+            .then((dispatchResult) => {
+              if (dispatchResult.success) {
+                SecurityStorage.updateEventStatus(newEvent.id, 'sent');
+              } else {
+                SecurityStorage.updateEventStatus(newEvent.id, 'failed', dispatchResult.message);
+              }
+              setEvents(SecurityStorage.getAllEvents());
+            })
+            .catch((dispatchErr) => {
+              console.warn('Background alert dispatch notice:', dispatchErr);
+            });
+        }
       }
     } catch (err) {
       console.error('Trigger monitoring failed', err);
@@ -678,6 +821,18 @@ export function App() {
 
       {/* Main Container */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-3.5 sm:px-6 sm:py-6 space-y-4 sm:space-y-6">
+        {/* Owner Mobile In-Use Protection & Pending Alert Countdown Banner */}
+        <OwnerInUseBanner
+          prefs={prefs}
+          isOwnerActive={isOwnerActive}
+          remainingOwnerSeconds={remainingOwnerSeconds}
+          onActivateOwnerMode={handleActivateOwnerMode}
+          onLockOwnerMode={handleLockOwnerMode}
+          pendingAlert={pendingAlert}
+          onCancelPendingAlert={handleCancelPendingAlert}
+          onOpenFaceModal={() => setIsFaceModalOpen(true)}
+        />
+
         {/* Device Permissions Required & Active Status Banner */}
         <DevicePermissionsBanner
           permissions={permissionsState}

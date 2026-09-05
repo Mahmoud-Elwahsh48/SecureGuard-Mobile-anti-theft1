@@ -18,6 +18,11 @@ const DEFAULT_PREFS: SecurityPrefsState = {
   soundAlert: true,
   securityPin: '1234',
   requirePinToDisarm: true,
+  runInBackground: true,
+  ownerInUseBypass: true,
+  ownerSessionGraceMinutes: 10,
+  intruderCountdownSeconds: 8,
+  pauseTriggersWhenUnlocked: true,
 };
 
 const INITIAL_SAMPLE_EVENTS: SecurityEvent[] = [

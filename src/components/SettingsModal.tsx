@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Check,
   Smartphone,
+  Shield,
   ShieldCheck,
   MapPin,
   Bell,
@@ -60,6 +61,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [soundAlert, setSoundAlert] = useState(prefs.soundAlert);
   const [securityPin, setSecurityPin] = useState(prefs.securityPin || '1234');
   const [requirePinToDisarm, setRequirePinToDisarm] = useState(prefs.requirePinToDisarm ?? true);
+  const [runInBackground, setRunInBackground] = useState(prefs.runInBackground ?? true);
+  const [ownerInUseBypass, setOwnerInUseBypass] = useState(prefs.ownerInUseBypass ?? true);
+  const [ownerSessionGraceMinutes, setOwnerSessionGraceMinutes] = useState(prefs.ownerSessionGraceMinutes ?? 10);
+  const [intruderCountdownSeconds, setIntruderCountdownSeconds] = useState(prefs.intruderCountdownSeconds ?? 8);
+  const [pauseTriggersWhenUnlocked, setPauseTriggersWhenUnlocked] = useState(prefs.pauseTriggersWhenUnlocked ?? true);
   const [showPin, setShowPin] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -81,6 +87,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setSoundAlert(prefs.soundAlert);
       setSecurityPin(prefs.securityPin || '1234');
       setRequirePinToDisarm(prefs.requirePinToDisarm ?? true);
+      setRunInBackground(prefs.runInBackground ?? true);
+      setOwnerInUseBypass(prefs.ownerInUseBypass ?? true);
+      setOwnerSessionGraceMinutes(prefs.ownerSessionGraceMinutes ?? 10);
+      setIntruderCountdownSeconds(prefs.intruderCountdownSeconds ?? 8);
+      setPauseTriggersWhenUnlocked(prefs.pauseTriggersWhenUnlocked ?? true);
       setShowPin(false);
       setPinError(null);
       setSavedSuccess(false);
@@ -154,6 +165,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       soundAlert,
       securityPin: securityPin.trim(),
       requirePinToDisarm,
+      runInBackground,
+      ownerInUseBypass,
+      ownerSessionGraceMinutes: Number(ownerSessionGraceMinutes) || 10,
+      intruderCountdownSeconds: Number(intruderCountdownSeconds) || 8,
+      pauseTriggersWhenUnlocked,
     });
     setSavedSuccess(true);
     setTimeout(() => {
@@ -447,6 +463,91 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="h-5 w-5 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500"
               />
             </label>
+
+            {/* Background & Owner Mobile In-Use Protection Section */}
+            <div className="rounded-xl border border-emerald-500/20 bg-slate-950/70 p-3.5 space-y-3">
+              <div className="flex items-center space-x-2">
+                <Shield className="h-4 w-4 text-emerald-400" />
+                <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                  Background Sentinel & Owner Protection
+                </span>
+              </div>
+
+              {/* 1. Run In Background */}
+              <label className="flex items-center justify-between cursor-pointer pt-1">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Run Vigilant in Background</div>
+                  <div className="text-[11px] text-slate-400">Keep monitoring active when screen locks or app is minimized</div>
+                </div>
+                <input
+                  id="run-in-background-toggle"
+                  type="checkbox"
+                  checked={runInBackground}
+                  onChange={(e) => setRunInBackground(e.target.checked)}
+                  className="h-5 w-5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                />
+              </label>
+
+              {/* 2. Owner Mobile In-Use Protection */}
+              <label className="flex items-center justify-between cursor-pointer pt-1">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Owner Mobile In-Use Protection</div>
+                  <div className="text-[11px] text-slate-400">Do not capture photo or send email alerts when owner is using mobile</div>
+                </div>
+                <input
+                  id="owner-in-use-bypass-toggle"
+                  type="checkbox"
+                  checked={ownerInUseBypass}
+                  onChange={(e) => setOwnerInUseBypass(e.target.checked)}
+                  className="h-5 w-5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                />
+              </label>
+
+              {/* 3. Pause While App is Unlocked */}
+              <label className="flex items-center justify-between cursor-pointer pt-1">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Auto-Pause Triggers When Unlocked</div>
+                  <div className="text-[11px] text-slate-400">Normal charger & network changes during active session won't alert</div>
+                </div>
+                <input
+                  id="pause-triggers-unlocked-toggle"
+                  type="checkbox"
+                  checked={pauseTriggersWhenUnlocked}
+                  onChange={(e) => setPauseTriggersWhenUnlocked(e.target.checked)}
+                  className="h-5 w-5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                />
+              </label>
+
+              {/* 4. Owner Session Grace Minutes & Cancel Countdown */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-800/80 text-xs">
+                <div>
+                  <label className="block text-[11px] text-slate-300 font-medium mb-1">
+                    Owner Session Grace (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    value={ownerSessionGraceMinutes}
+                    onChange={(e) => setOwnerSessionGraceMinutes(parseInt(e.target.value, 10) || 10)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300 font-medium mb-1">
+                    Intruder Cancel Window (Seconds)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={intruderCountdownSeconds}
+                    onChange={(e) => setIntruderCountdownSeconds(parseInt(e.target.value, 10) || 0)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-white"
+                  />
+                </div>
+              </div>
+            </div>
 
             {/* Device Security Permissions Status */}
             <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 space-y-3">

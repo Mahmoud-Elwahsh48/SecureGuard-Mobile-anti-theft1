@@ -36,6 +36,11 @@ export interface SecurityPrefsState {
   soundAlert: boolean;
   securityPin: string; // 4-digit numeric passcode
   requirePinToDisarm: boolean;
+  runInBackground: boolean; // Background execution and wake vigilance
+  ownerInUseBypass: boolean; // Suppress capture and email when owner is using mobile
+  ownerSessionGraceMinutes: number; // Active owner session duration in minutes
+  intruderCountdownSeconds: number; // Grace countdown to cancel email if owner triggered
+  pauseTriggersWhenUnlocked: boolean; // Pause intruder captures during active owner interaction
 }
 
 export interface DeviceTelemetryData {
